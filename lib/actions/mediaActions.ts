@@ -1,0 +1,173 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { randomUUID } from "crypto";
+import { z } from "zod";
+import { prisma } from "@/lib/db";
+import { requireAuth } from "@/lib/auth/session";
+import { processImage } from "@/services/media/image";
+import { processVideo } from "@/services/media/video";
+import { uploadToR2 } from "@/services/r2/upload";
+import { deleteFromR2 } from "@/services/r2/delete";
+import { extractKeyFromUrl } from "@/services/r2/url";
+
+const ALLOWED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/avif",
+];
+const ALLOWED_VIDEO_TYPES = [
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "video/avi",
+  "video/x-msvideo",
+];
+const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20MB
+const MAX_VIDEO_SIZE = 500 * 1024 * 1024; // 500MB
+
+function validateFile(file: File) {
+  const isImage = ALLOWED_IMAGE_TYPES.includes(file.type);
+  const isVideo = ALLOWED_VIDEO_TYPES.includes(file.type);
+
+  if (!isImage && !isVideo) {
+    throw new Error(`Invalid file type: ${file.type}. Allowed: images and videos.`);
+  }
+
+  const maxSize = isImage ? MAX_IMAGE_SIZE : MAX_VIDEO_SIZE;
+  if (file.size > maxSize) {
+    throw new Error(
+      `File too large: ${file.name}. Max ${isImage ? "20MB" : "500MB"}.`
+    );
+  }
+
+  return { isImage, isVideo };
+}
+
+export async function uploadMedia(tripId: string, formData: FormData) {
+  await requireAuth();
+
+  const files = formData.getAll("files") as File[];
+  if (files.length === 0) {
+    throw new Error("No files provided");
+  }
+
+  const results = [];
+
+  for (const file of files) {
+    const { isImage } = validateFile(file);
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+
+    // Process media
+    const processed = isImage
+      ? await processImage(buffer)
+      : await processVideo(buffer);
+
+    // Upload to R2
+    const uuid = randomUUID();
+    const ext = isImage ? "webp" : "mp4";
+    const thumbExt = isImage ? "webp" : "jpg";
+
+    const mediaKey = `trips/${tripId}/media/${uuid}.${ext}`;
+    const thumbKey = `trips/${tripId}/thumbs/${uuid}.${thumbExt}`;
+
+    const [url, thumbnailUrl] = await Promise.all([
+      uploadToR2({
+        key: mediaKey,
+        body: processed.buffer,
+        contentType: processed.mimeType,
+        contentLength: processed.buffer.length,
+      }),
+      uploadToR2({
+        key: thumbKey,
+        body: processed.thumbnailBuffer,
+        contentType: isImage ? "image/webp" : "image/jpeg",
+        contentLength: processed.thumbnailBuffer.length,
+      }),
+    ]);
+
+    // Save to database
+    const order = await prisma.media.count({ where: { tripId } });
+
+    const media = await prisma.media.create({
+      data: {
+        tripId,
+        type: isImage ? "IMAGE" : "VIDEO",
+        url,
+        thumbnailUrl,
+        mimeType: processed.mimeType,
+        fileSize: processed.fileSize,
+        order,
+      },
+    });
+
+    results.push(media);
+  }
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath(`/trip/${tripId}`);
+  revalidatePath("/");
+
+  return results;
+}
+
+export async function deleteMedia(mediaId: string) {
+  await requireAuth();
+
+  const media = await prisma.media.findUnique({
+    where: { id: mediaId },
+  });
+
+  if (!media) {
+    throw new Error("Media not found");
+  }
+
+  // Delete from R2
+  try {
+    await deleteFromR2(extractKeyFromUrl(media.url));
+    if (media.thumbnailUrl) {
+      await deleteFromR2(extractKeyFromUrl(media.thumbnailUrl));
+    }
+  } catch (e) {
+    console.error("Failed to delete from R2:", e);
+  }
+
+  // Delete from database
+  await prisma.media.delete({ where: { id: mediaId } });
+
+  revalidatePath(`/admin/trips/${media.tripId}`);
+  revalidatePath(`/trip/${media.tripId}`);
+  revalidatePath("/");
+}
+
+export async function reorderMedia(tripId: string, mediaIds: string[]) {
+  await requireAuth();
+
+  await Promise.all(
+    mediaIds.map((id, index) =>
+      prisma.media.update({
+        where: { id },
+        data: { order: index },
+      })
+    )
+  );
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath(`/trip/${tripId}`);
+}
+
+export async function setCoverImage(tripId: string, coverImage: string | null) {
+  await requireAuth();
+
+  await prisma.trip.update({
+    where: { id: tripId },
+    data: { coverImage },
+  });
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath(`/trip/${tripId}`);
+  revalidatePath("/");
+}
