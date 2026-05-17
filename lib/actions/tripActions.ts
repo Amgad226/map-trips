@@ -26,15 +26,22 @@ export async function createTrip(formData: FormData) {
     throw new Error(Object.values(errors).flat().join(", "));
   }
 
-  const trip = await prisma.trip.create({
-    data: parsed.data,
-  });
+  try {
+    const trip = await prisma.trip.create({
+      data: parsed.data,
+    });
 
-  revalidatePath("/");
-  redirect(`/admin/trips/${trip.id}`);
+    revalidatePath("/");
+    redirect(`/admin/trips/${trip.id}`);
+  } catch (error: unknown) {
+    if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
+      throw new Error("A trip with this title already exists");
+    }
+    throw error;
+  }
 }
 
-export async function updateTrip(id: string, formData: FormData) {
+export async function updateTrip(id: number, formData: FormData) {
   await requireAuth();
 
   const data = Object.fromEntries(formData.entries());
@@ -45,17 +52,24 @@ export async function updateTrip(id: string, formData: FormData) {
     throw new Error(Object.values(errors).flat().join(", "));
   }
 
-  await prisma.trip.update({
-    where: { id },
-    data: parsed.data,
-  });
+  try {
+    await prisma.trip.update({
+      where: { id },
+      data: parsed.data,
+    });
 
-  revalidatePath("/");
-  revalidatePath(`/trip/${id}`);
-  revalidatePath(`/admin/trips/${id}`);
+    revalidatePath("/");
+    revalidatePath(`/trip/${id}`);
+    revalidatePath(`/admin/trips/${id}`);
+  } catch (error: unknown) {
+    if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
+      throw new Error("A trip with this title already exists");
+    }
+    throw error;
+  }
 }
 
-export async function deleteTrip(id: string) {
+export async function deleteTrip(id: number) {
   await requireAuth();
 
   await prisma.trip.delete({

@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/db";
 import Navbar from "@/components/layout/Navbar";
-import Map from "@/components/map/Map";
-import MapClient from "@/components/map/MapClient";
+import MapWrapper from "@/components/map/MapWrapper";
+
+export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const trips = await prisma.trip.findMany({
@@ -12,7 +13,7 @@ export default async function HomePage() {
     <div className="flex flex-col h-screen">
       <Navbar />
       <main className="flex-1 relative">
-        <Map trips={trips} />
+        <MapWrapper trips={trips} />
       </main>
     </div>
   );

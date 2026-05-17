@@ -1,83 +1,71 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import TripForm from "@/components/admin/TripForm";
-import DeleteTripButton from "@/components/admin/DeleteTripButton";
-import MediaUploader from "@/components/admin/MediaUploader";
-import MediaGallery from "@/components/admin/MediaGallery";
 import {
   updateTrip,
   deleteTrip,
 } from "@/lib/actions/tripActions";
 import {
-  uploadMedia,
   deleteMedia,
   reorderMedia,
   setCoverImage,
+  toggleMediaFlag,
 } from "@/lib/actions/mediaActions";
+import EditTripView from "@/components/admin/EditTripView";
 
 interface Props {
   params: Promise<{ id: string }>;
 }
 
+function parseId(raw: string): number {
+  const n = parseInt(raw, 10);
+  if (isNaN(n)) throw new Error("Invalid trip ID");
+  return n;
+}
+
 export default async function EditTripPage({ params }: Props) {
   const { id } = await params;
+  const tripId = parseId(id);
   const trip = await prisma.trip.findUnique({
-    where: { id },
-    include: { media: { orderBy: { order: "asc" } } },
+    where: { id: tripId },
+    include: { media: { orderBy: { order: "asc" } }, keywords: true },
   });
 
   if (!trip) notFound();
 
   async function handleUpdate(formData: FormData) {
     "use server";
-    await updateTrip(id, formData);
+    await updateTrip(tripId, formData);
   }
 
-  async function handleUpload(formData: FormData) {
-    "use server";
-    return uploadMedia(id, formData);
-  }
-
-  async function handleDeleteMedia(mediaId: string) {
+  async function handleDeleteMedia(mediaId: number) {
     "use server";
     await deleteMedia(mediaId);
   }
 
-  async function handleReorderMedia(mediaIds: string[]) {
+  async function handleReorderMedia(mediaIds: number[]) {
     "use server";
-    await reorderMedia(id, mediaIds);
+    await reorderMedia(tripId, mediaIds);
   }
 
   async function handleSetCover(url: string | null) {
     "use server";
-    await setCoverImage(id, url);
+    await setCoverImage(tripId, url);
+  }
+
+  async function handleToggleFlag(mediaId: number) {
+    "use server";
+    await toggleMediaFlag(mediaId);
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Edit Trip</h1>
-        <DeleteTripButton id={id} action={deleteTrip} />
-      </div>
-
-      <TripForm trip={trip} action={handleUpdate} />
-
-      <div className="mt-12 border-t border-gray-200 pt-8">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Upload Media</h2>
-        <MediaUploader tripId={id} action={handleUpload} />
-      </div>
-
-      <div className="mt-8">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Media Gallery</h2>
-        <MediaGallery
-          tripId={id}
-          media={trip.media}
-          coverImage={trip.coverImage}
-          onDelete={handleDeleteMedia}
-          onReorder={handleReorderMedia}
-          onSetCover={handleSetCover}
-        />
-      </div>
-    </div>
+    <EditTripView
+      trip={trip}
+      handleUpdate={handleUpdate}
+      handleDeleteMedia={handleDeleteMedia}
+      handleReorderMedia={handleReorderMedia}
+      handleSetCover={handleSetCover}
+      handleToggleFlag={handleToggleFlag}
+      handleDeleteTrip={deleteTrip}
+    />
   );
 }

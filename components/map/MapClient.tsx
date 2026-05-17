@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Trip } from "@prisma/client";
+import { useTranslation } from "react-i18next";
 import { getProxyUrl } from "@/lib/utils";
 
 interface MapClientProps {
@@ -11,9 +12,10 @@ interface MapClientProps {
 type MapLayer = "normal" | "satellite";
 
 export default function MapClient({ trips }: MapClientProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<any>(null);
-  const layersRef = useRef<{ normal: any; satellite: any } | null>(null);
+  const mapRef = useRef<import("leaflet").Map | null>(null);
+  const layersRef = useRef<{ normal: import("leaflet").TileLayer; satellite: import("leaflet").TileLayer } | null>(null);
   const mountedRef = useRef(false);
   const [layer, setLayer] = useState<MapLayer>("normal");
 
@@ -26,9 +28,18 @@ export default function MapClient({ trips }: MapClientProps) {
 
     import("leaflet").then((L) => {
       if (!containerRef.current) return;
+      if (mapRef.current) return; // Already initialized (Strict Mode double-run)
+
+      // Clear any leftover leaflet ID from previous strict-mode mount
+      const container = containerRef.current;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((container as any)._leaflet_id) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        delete (container as any)._leaflet_id;
+      }
 
       // Center on Syria
-      const map = L.map(containerRef.current).setView([35.0, 38.5], 7);
+      const map = L.map(container).setView([35.0, 38.5], 7);
       mapRef.current = map;
 
       const normalLayer = L.tileLayer(
@@ -69,7 +80,7 @@ export default function MapClient({ trips }: MapClientProps) {
             <h3 style="font-weight:600;font-size:14px;color:#111827;margin:0 0 4px;">${trip.title}</h3>
             ${trip.description ? `<p style="font-size:12px;color:#6b7280;margin:0 0 4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${trip.description}</p>` : ""}
             <p style="font-size:12px;color:#9ca3af;margin:0 0 8px;">${new Date(trip.tripDate).toLocaleDateString()}</p>
-            <a href="/trip/${trip.id}" style="font-size:12px;font-weight:500;color:#2563eb;text-decoration:none;">View details →</a>
+            <a href="/trip/${trip.id}" style="font-size:12px;font-weight:500;color:#2563eb;text-decoration:none;">${t("map.viewDetails")}</a>
           </div>
         `);
       });
@@ -82,7 +93,7 @@ export default function MapClient({ trips }: MapClientProps) {
       }
       mountedRef.current = false;
     };
-  }, [trips]);
+  }, [trips, t]);
 
   // Toggle layers when state changes
   useEffect(() => {
@@ -103,30 +114,28 @@ export default function MapClient({ trips }: MapClientProps) {
     <div className="relative h-full w-full min-h-[300px]">
       <div ref={containerRef} className="absolute inset-0" />
 
-      <div className="absolute top-4 right-4 z-[1000] flex gap-1 bg-white/80 backdrop-blur-md border border-gray-200/50 rounded-xl shadow-sm p-1">
+      <div className="absolute top-4 right-4 z-[1000] flex gap-1 bg-card/80 backdrop-blur-md border border-border rounded-xl shadow-lg p-1">
         <button
           onClick={() => setLayer("normal")}
-          className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+          className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
             layer === "normal"
-              ? "bg-blue-600 text-white"
-              : "text-gray-600 hover:bg-gray-100"
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-muted"
           }`}
         >
-          Map
+          {t("map.normal")}
         </button>
         <button
           onClick={() => setLayer("satellite")}
-          className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+          className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
             layer === "satellite"
-              ? "bg-blue-600 text-white"
-              : "text-gray-600 hover:bg-gray-100"
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-muted"
           }`}
         >
-          Satellite
+          {t("map.satellite")}
         </button>
       </div>
-    
     </div>
-    
   );
 }

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Trip, Media } from "@prisma/client";
+import { useTranslation } from "react-i18next";
 import { getProxyUrl } from "@/lib/utils";
 
 interface TripCardProps {
@@ -9,23 +10,24 @@ interface TripCardProps {
 }
 
 export default function TripCard({ trip }: TripCardProps) {
+  const { t } = useTranslation();
   const imageCount = trip.media?.filter((m) => m.type === "IMAGE").length || 0;
   const videoCount = trip.media?.filter((m) => m.type === "VIDEO").length || 0;
 
   return (
-    <div className="group rounded-xl border border-gray-200 bg-white overflow-hidden hover:shadow-md transition-shadow">
+    <div className="group rounded-2xl border border-border bg-card overflow-hidden hover:shadow-xl hover:shadow-primary/5 transition-all duration-300 hover:-translate-y-0.5">
       {/* Cover image or placeholder */}
-      <div className="relative aspect-[16/10] bg-gray-100">
+      <Link href={`/trip/${trip.id}`} className="block relative aspect-[16/10] bg-muted">
         {trip.coverImage ? (
           <img
             src={getProxyUrl(trip.coverImage)}
             alt={trip.title}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted to-border">
             <svg
-              className="w-12 h-12 text-gray-300"
+              className="w-12 h-12 text-muted-foreground/40"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -41,7 +43,7 @@ export default function TripCard({ trip }: TripCardProps) {
         )}
         <div className="absolute bottom-2 right-2 flex gap-1.5">
           {imageCount > 0 && (
-            <span className="bg-black/60 text-white text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
+            <span className="bg-black/60 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-full flex items-center gap-1">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
@@ -49,7 +51,7 @@ export default function TripCard({ trip }: TripCardProps) {
             </span>
           )}
           {videoCount > 0 && (
-            <span className="bg-black/60 text-white text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
+            <span className="bg-black/60 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-full flex items-center gap-1">
               <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M8 5v14l11-7z" />
               </svg>
@@ -57,12 +59,14 @@ export default function TripCard({ trip }: TripCardProps) {
             </span>
           )}
         </div>
-      </div>
+      </Link>
 
       {/* Content */}
       <div className="p-4">
-        <h3 className="font-semibold text-gray-900 mb-1 truncate">{trip.title}</h3>
-        <p className="text-xs text-gray-500 mb-3">
+        <Link href={`/trip/${trip.id}`} className="block">
+          <h3 className="font-semibold text-card-foreground mb-1 truncate group-hover:text-primary transition-colors">{trip.title}</h3>
+        </Link>
+        <p className="text-xs text-muted-foreground mb-3">
           {new Date(trip.tripDate).toLocaleDateString(undefined, {
             year: "numeric",
             month: "short",
@@ -75,16 +79,16 @@ export default function TripCard({ trip }: TripCardProps) {
         <div className="flex items-center gap-2">
           <Link
             href={`/admin/trips/${trip.id}`}
-            className="flex-1 rounded-lg bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-600 text-center hover:bg-blue-100 transition-colors"
+            className="flex-1 rounded-xl bg-primary/10 px-3 py-2 text-xs font-semibold text-primary text-center hover:bg-primary/20 transition-colors"
           >
-            Edit
+            {t("actions.edit")}
           </Link>
           <Link
             href={`/trip/${trip.id}`}
             target="_blank"
-            className="flex-1 rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-600 text-center hover:bg-gray-200 transition-colors"
+            className="flex-1 rounded-xl bg-muted px-3 py-2 text-xs font-semibold text-muted-foreground text-center hover:bg-muted/80 transition-colors"
           >
-            View
+            {t("actions.view")}
           </Link>
         </div>
       </div>

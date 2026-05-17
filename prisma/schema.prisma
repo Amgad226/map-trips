@@ -7,7 +7,7 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
+  id        Int      @id @default(autoincrement())
   email     String   @unique
   name      String
   password  String
@@ -16,31 +16,47 @@ model User {
 }
 
 model Trip {
-  id          String   @id @default(cuid())
-  title       String
+  id          Int       @id @default(autoincrement())
+  title       String    @unique
   description String?
   latitude    Float
   longitude   Float
   tripDate    DateTime
   coverImage  String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   media       Media[]
+  keywords    Keyword[]
 }
 
 model Media {
-  id           String    @id @default(cuid())
-  tripId       String
+  id           Int       @id @default(autoincrement())
+  tripId       Int
   trip         Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
   type         MediaType
   url          String
+  url360p      String?
+  url720p      String?
   thumbnailUrl String?
   mimeType     String
   fileSize     Int
+  fileSizeBeforeCompress Int?
   order        Int       @default(0)
+  isFlagged    Boolean   @default(false)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  @@index([tripId])
+}
+
+model Keyword {
+  id        Int      @id @default(autoincrement())
+  tripId    Int
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  value     String
+  createdAt DateTime @default(now())
+
+  @@unique([tripId, value])
   @@index([tripId])
 }
 

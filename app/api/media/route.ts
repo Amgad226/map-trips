@@ -29,27 +29,28 @@ export async function GET(request: NextRequest) {
     }
     headers.set("Cache-Control", "public, max-age=31536000, immutable");
 
-    const body = response.Body as any;
+    const body = response.Body;
 
     // Use native web stream if available (newer AWS SDK)
-    if (typeof body.transformToWebStream === "function") {
-      return new NextResponse(body.transformToWebStream(), {
+    if (body && typeof body === "object" && "transformToWebStream" in body && typeof body.transformToWebStream === "function") {
+      return new NextResponse(body.transformToWebStream() as ReadableStream, {
         status: 200,
         headers,
       });
     }
 
     // Fallback: manual conversion from Node.js Readable to Web ReadableStream
+    const nodeStream = body as NodeJS.ReadableStream;
     const webStream = new ReadableStream({
       start(controller) {
-        body.on("data", (chunk: Buffer) => {
+        nodeStream.on("data", (chunk: Buffer) => {
           controller.enqueue(new Uint8Array(chunk));
         });
-        body.on("end", () => controller.close());
-        body.on("error", (err: Error) => controller.error(err));
+        nodeStream.on("end", () => controller.close());
+        nodeStream.on("error", (err: Error) => controller.error(err));
       },
       cancel() {
-        body.destroy?.();
+        (nodeStream as NodeJS.ReadableStream & { destroy?: () => void }).destroy?.();
       },
     });
 

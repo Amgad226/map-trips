@@ -1,10 +1,14 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
+import { join } from "path";
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
 function createPrismaClient() {
-  const url = process.env.DATABASE_URL || "file:./dev.db";
+  const dbPath = process.env.DATABASE_URL
+    ? process.env.DATABASE_URL
+    : join(process.cwd(), "dev.db");
+  const url = dbPath.startsWith("file:") ? dbPath : `file:${dbPath}`;
   const adapter = new PrismaLibSql({ url });
   return new PrismaClient({ adapter });
 }

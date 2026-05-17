@@ -9,3 +9,5 @@ export async function deleteFromR2(key: string): Promise<void> {
 
   await r2Client.send(command);
 }
+
+

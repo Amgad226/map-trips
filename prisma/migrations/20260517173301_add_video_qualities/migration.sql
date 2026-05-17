@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Media" ADD COLUMN "url360p" TEXT;
+ALTER TABLE "Media" ADD COLUMN "url720p" TEXT;

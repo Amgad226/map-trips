@@ -1,0 +1,135 @@
+{
+  "app": {
+    "title": "Travel Map",
+    "description": "Explore trips around the world"
+  },
+  "nav": {
+    "brand": "Travel Map",
+    "map": "Map",
+    "admin": "Admin",
+    "toggleMenu": "Toggle menu",
+    "theme": "Theme"
+  },
+  "language": {
+    "en": "English",
+    "ar": "العربية"
+  },
+  "auth": {
+    "loginTitle": "Admin Login",
+    "email": "Email",
+    "password": "Password",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "signIn": "Sign In",
+    "signingIn": "Signing in...",
+    "signOut": "Sign Out",
+    "invalidCredentials": "Invalid email or password"
+  },
+  "admin": {
+    "dashboard": "Dashboard",
+    "trips": "Trips",
+    "totalMedia": "Total Media",
+    "images": "Images",
+    "videos": "Videos",
+    "allTrips": "All Trips",
+    "newTrip": "+ New Trip",
+    "noTrips": "No trips yet. Create your first trip to get started.",
+    "editTrip": "Edit Trip",
+    "createTrip": "Create New Trip",
+    "uploadMedia": "Upload Media",
+    "mediaGallery": "Media Gallery",
+    "adminDashboard": "Admin Dashboard"
+  },
+  "tripForm": {
+    "title": "Title",
+    "description": "Description",
+    "location": "Location",
+    "selectOnMap": "Select on map",
+    "latitude": "Latitude",
+    "longitude": "Longitude",
+    "tripDate": "Trip Date",
+    "saving": "Saving...",
+    "updateTrip": "Update Trip",
+    "createTrip": "Create Trip",
+    "cancel": "Cancel",
+    "error": "Something went wrong"
+  },
+  "tripDetail": {
+    "backToMap": "Back to map",
+    "keywords": "Keywords",
+    "gallery": "Gallery",
+    "noMedia": "No photos or videos yet."
+  },
+  "media": {
+    "dropFiles": "Drop files here or click to upload",
+    "sizeLimit": "Images up to 20MB, videos up to 500MB",
+    "fileSelected_one": "{{count}} file selected",
+    "fileSelected_other": "{{count}} files selected",
+    "uploading": "Uploading...",
+    "uploadFiles": "Upload Files",
+    "uploadFailed": "Upload failed",
+    "noMediaYet": "No media yet. Upload images and videos above.",
+    "deleteConfirm": "Are you sure you want to delete this media?",
+    "deleting": "Deleting...",
+    "delete": "Delete",
+    "cover": "Cover",
+    "setCover": "Set as Cover",
+    "removeCover": "Remove Cover",
+    "flag": "Flag +18",
+    "unflag": "Unflag",
+    "flagged": "Flagged",
+    "flaggedBadge": "+18"
+  },
+  "gallery": {
+    "hideFlagged": "Hide flagged",
+    "showFlagged": "Show flagged",
+    "flaggedHidden_one": "{{count}} flagged item hidden",
+    "flaggedHidden_other": "{{count}} flagged items hidden",
+    "allFlagged": "All content is flagged.",
+    "showFlaggedContent": "Show flagged content"
+  },
+  "modal": {
+    "flaggedTitle": "Flagged Content",
+    "flaggedWarning": "This media has been flagged as potentially inappropriate (+18).",
+    "goBack": "Go Back",
+    "showMe": "I understand, show me",
+    "flaggedContent": "Flagged content (+18)"
+  },
+  "theme": {
+    "light": "Light mode",
+    "dark": "Dark mode"
+  },
+  "video": {
+    "speed": "Speed",
+    "quality": "Quality"
+  },
+  "upload": {
+    "serverUpload": "Server upload",
+    "r2Storage": "R2 storage",
+    "complete": "Upload complete!"
+  },
+  "keywords": {
+    "placeholder": "Add a keyword...",
+    "add": "Add",
+    "adding": "...",
+    "remove": "Remove",
+    "failed": "Failed to add keyword"
+  },
+  "locationPicker": {
+    "title": "Select Location",
+    "cancel": "Cancel",
+    "confirm": "Confirm Location"
+  },
+  "map": {
+    "normal": "Map",
+    "satellite": "Satellite",
+    "viewDetails": "View details →"
+  },
+  "actions": {
+    "edit": "Edit",
+    "view": "View",
+    "deleteTrip": "Delete Trip",
+    "deleteConfirm": "Are you sure?",
+    "yesDelete": "Yes, Delete"
+  }
+}

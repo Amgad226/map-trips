@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "crypto";
-import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth/session";
 import { processImage } from "@/services/media/image";
@@ -10,6 +9,7 @@ import { processVideo } from "@/services/media/video";
 import { uploadToR2 } from "@/services/r2/upload";
 import { deleteFromR2 } from "@/services/r2/delete";
 import { extractKeyFromUrl } from "@/services/r2/url";
+import { slugify } from "@/lib/utils";
 
 const ALLOWED_IMAGE_TYPES = [
   "image/jpeg",
@@ -46,14 +46,20 @@ function validateFile(file: File) {
   return { isImage, isVideo };
 }
 
-export async function uploadMedia(tripId: string, formData: FormData) {
+export async function uploadMedia(tripId: number, formData: FormData) {
   await requireAuth();
+
+  const trip = await prisma.trip.findUnique({ where: { id: tripId } });
+  if (!trip) {
+    throw new Error("Trip not found");
+  }
 
   const files = formData.getAll("files") as File[];
   if (files.length === 0) {
     throw new Error("No files provided");
   }
 
+  const folder = `${slugify(trip.title)}_${trip.id}`;
   const results = [];
 
   for (const file of files) {
@@ -71,8 +77,8 @@ export async function uploadMedia(tripId: string, formData: FormData) {
     const ext = isImage ? "webp" : "mp4";
     const thumbExt = isImage ? "webp" : "jpg";
 
-    const mediaKey = `trips/${tripId}/media/${uuid}.${ext}`;
-    const thumbKey = `trips/${tripId}/thumbs/${uuid}.${thumbExt}`;
+    const mediaKey = `${folder}/media/${uuid}.${ext}`;
+    const thumbKey = `${folder}/thumbs/${uuid}.${thumbExt}`;
 
     const [url, thumbnailUrl] = await Promise.all([
       uploadToR2({
@@ -100,6 +106,7 @@ export async function uploadMedia(tripId: string, formData: FormData) {
         thumbnailUrl,
         mimeType: processed.mimeType,
         fileSize: processed.fileSize,
+        fileSizeBeforeCompress: file.size,
         order,
       },
     });
@@ -114,7 +121,7 @@ export async function uploadMedia(tripId: string, formData: FormData) {
   return results;
 }
 
-export async function deleteMedia(mediaId: string) {
+export async function deleteMedia(mediaId: number) {
   await requireAuth();
 
   const media = await prisma.media.findUnique({
@@ -143,7 +150,7 @@ export async function deleteMedia(mediaId: string) {
   revalidatePath("/");
 }
 
-export async function reorderMedia(tripId: string, mediaIds: string[]) {
+export async function reorderMedia(tripId: number, mediaIds: number[]) {
   await requireAuth();
 
   await Promise.all(
@@ -159,7 +166,7 @@ export async function reorderMedia(tripId: string, mediaIds: string[]) {
   revalidatePath(`/trip/${tripId}`);
 }
 
-export async function setCoverImage(tripId: string, coverImage: string | null) {
+export async function setCoverImage(tripId: number, coverImage: string | null) {
   await requireAuth();
 
   await prisma.trip.update({
@@ -170,4 +177,24 @@ export async function setCoverImage(tripId: string, coverImage: string | null) {
   revalidatePath(`/admin/trips/${tripId}`);
   revalidatePath(`/trip/${tripId}`);
   revalidatePath("/");
+}
+
+export async function toggleMediaFlag(mediaId: number) {
+  await requireAuth();
+
+  const media = await prisma.media.findUnique({
+    where: { id: mediaId },
+  });
+
+  if (!media) {
+    throw new Error("Media not found");
+  }
+
+  await prisma.media.update({
+    where: { id: mediaId },
+    data: { isFlagged: !media.isFlagged },
+  });
+
+  revalidatePath(`/admin/trips/${media.tripId}`);
+  revalidatePath(`/trip/${media.tripId}`);
 }

@@ -1,0 +1,146 @@
+{
+  "app": {
+    "title": "خريطة الرحلات",
+    "description": "استكشف الرحلات حول العالم"
+  },
+  "nav": {
+    "brand": "خريطة الرحلات",
+    "map": "الخريطة",
+    "admin": "الإدارة",
+    "toggleMenu": "تبديل القائمة",
+    "theme": "المظهر"
+  },
+  "language": {
+    "en": "English",
+    "ar": "العربية"
+  },
+  "auth": {
+    "loginTitle": "تسجيل الدخول للإدارة",
+    "email": "البريد الإلكتروني",
+    "password": "كلمة المرور",
+    "showPassword": "إظهار كلمة المرور",
+    "hidePassword": "إخفاء كلمة المرور",
+    "signIn": "تسجيل الدخول",
+    "signingIn": "جاري تسجيل الدخول...",
+    "signOut": "تسجيل الخروج",
+    "invalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة"
+  },
+  "admin": {
+    "dashboard": "لوحة التحكم",
+    "trips": "الرحلات",
+    "totalMedia": "إجمالي الوسائط",
+    "images": "الصور",
+    "videos": "الفيديوهات",
+    "allTrips": "جميع الرحلات",
+    "newTrip": "+ رحلة جديدة",
+    "noTrips": "لا توجد رحلات بعد. أنشئ رحلتك الأولى للبدء.",
+    "editTrip": "تعديل الرحلة",
+    "createTrip": "إنشاء رحلة جديدة",
+    "uploadMedia": "رفع الوسائط",
+    "mediaGallery": "معرض الوسائط",
+    "adminDashboard": "لوحة تحكم الإدارة"
+  },
+  "tripForm": {
+    "title": "العنوان",
+    "description": "الوصف",
+    "location": "الموقع",
+    "selectOnMap": "اختر من الخريطة",
+    "latitude": "خط العرض",
+    "longitude": "خط الطول",
+    "tripDate": "تاريخ الرحلة",
+    "saving": "جاري الحفظ...",
+    "updateTrip": "تحديث الرحلة",
+    "createTrip": "إنشاء الرحلة",
+    "cancel": "إلغاء",
+    "error": "حدث خطأ ما"
+  },
+  "tripDetail": {
+    "backToMap": "العودة إلى الخريطة",
+    "keywords": "الكلمات المفتاحية",
+    "gallery": "المعرض",
+    "noMedia": "لا توجد صور أو فيديوهات بعد."
+  },
+  "media": {
+    "dropFiles": "أسحب الملفات هنا أو اضغط للرفع",
+    "sizeLimit": "صور حتى 20 ميجابايت، فيديوهات حتى 500 ميجابايت",
+    "fileSelected_one": "{{count}} ملف محدد",
+    "fileSelected_two": "{{count}} ملفان محددان",
+    "fileSelected_few": "{{count}} ملفات محددة",
+    "fileSelected_other": "{{count}} ملف محدد",
+    "uploading": "جاري الرفع...",
+    "uploadFiles": "رفع الملفات",
+    "uploadFailed": "فشل الرفع",
+    "noMediaYet": "لا توجد وسائط بعد. ارفع صورًا وفيديوهات أعلاه.",
+    "deleteConfirm": "هل أنت متأكد أنك تريد حذف هذه الوسائط؟",
+    "deleting": "جاري الحذف...",
+    "delete": "حذف",
+    "cover": "الغلاف",
+    "setCover": "تعيين كغلاف",
+    "removeCover": "إزالة الغلاف",
+    "flag": "تحذير +18",
+    "unflag": "إلغاء التحذير",
+    "flagged": "محذر",
+    "flaggedBadge": "+18"
+  },
+  "gallery": {
+    "hideFlagged": "إخفاء المحذر",
+    "showFlagged": "إظهار المحذر",
+    "flaggedHidden_one": "{{count}} عنصر محذر مخفي",
+    "flaggedHidden_two": "{{count}} عنصران محذران مخفيان",
+    "flaggedHidden_few": "{{count}} عناصر محذرة مخفية",
+    "flaggedHidden_other": "{{count}} عنصر محذر مخفي",
+    "allFlagged": "جميع المحتويات محذرة.",
+    "showFlaggedContent": "إظهار المحتوى المحذر"
+  },
+  "modal": {
+    "flaggedTitle": "محتوى محذر",
+    "flaggedWarning": "تم تحذير هذه الوسائط بأنها قد تكون غير لائقة (+18).",
+    "goBack": "العودة",
+    "showMe": "أفهم، أرني المحتوى",
+    "flaggedContent": "محتوى محذر (+18)"
+  },
+  "theme": {
+    "light": "الوضع الفاتح",
+    "dark": "الوضع الداكن"
+  },
+  "video": {
+    "speed": "السرعة",
+    "quality": "الجودة"
+  },
+  "upload": {
+    "serverUpload": "رفع للخادم",
+    "r2Storage": "تخزين R2",
+    "complete": "اكتمل الرفع!"
+  },
+  "nav": {
+    "brand": "خريطة الرحلات",
+    "map": "الخريطة",
+    "admin": "الإدارة",
+    "toggleMenu": "تبديل القائمة",
+    "theme": "المظهر"
+  },
+  "keywords": {
+    "placeholder": "أضف كلمة مفتاحية...",
+    "add": "إضافة",
+    "adding": "...",
+    "remove": "إزالة",
+    "failed": "فشل إضافة الكلمة المفتاحية"
+  },
+  "locationPicker": {
+    "title": "اختيار الموقع",
+    "cancel": "إلغاء",
+    "confirm": "تأكيد الموقع"
+  },
+  "map": {
+    "normal": "خريطة",
+    "satellite": "قمر صناعي",
+    "viewDetails": "عرض التفاصيل →"
+  },
+  "actions": {
+    "edit": "تعديل",
+    "view": "عرض",
+    "deleteTrip": "حذف الرحلة",
+    "deleteConfirm": "هل أنت متأكد؟",
+    "yesDelete": "نعم، احذف"
+  }
+}
