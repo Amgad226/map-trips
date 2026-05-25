@@ -13,8 +13,6 @@ interface MediaModalProps {
   onNext: () => void;
 }
 
-type VideoQuality = "auto" | "360p" | "720p" | "full";
-
 export default function MediaModal({ media, showFlagged, onClose, onPrev, onNext }: MediaModalProps) {
   const { t } = useTranslation();
   const [scale, setScale] = useState(1);
@@ -22,7 +20,6 @@ export default function MediaModal({ media, showFlagged, onClose, onPrev, onNext
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [playbackRate, setPlaybackRate] = useState(1);
-  const [videoQuality, setVideoQuality] = useState<VideoQuality>("auto");
   const videoRef = useRef<HTMLVideoElement>(null);
   const imageRef = useRef<HTMLDivElement>(null);
 
@@ -56,21 +53,7 @@ export default function MediaModal({ media, showFlagged, onClose, onPrev, onNext
 
   if (!media) return null;
 
-  const videoSrc = (() => {
-    if (!media) return "";
-    if (!media) return "";
-    if (media.type !== "VIDEO") return getProxyUrl(media.url);
-    switch (videoQuality) {
-      case "360p":
-        return getProxyUrl(media.url360p || media.url);
-      case "720p":
-        return getProxyUrl(media.url720p || media.url);
-      case "full":
-      case "auto":
-      default:
-        return getProxyUrl(media.url);
-    }
-  })();
+  const videoSrc = media ? getProxyUrl(media.url) : "";
 
   function handleWheel(e: React.WheelEvent) {
     if (media!.type !== "IMAGE") return;
@@ -110,13 +93,15 @@ export default function MediaModal({ media, showFlagged, onClose, onPrev, onNext
 
   async function handleDownload() {
     try {
-      const url = videoSrc;
+      const url = media!.type === "VIDEO" ? videoSrc : getProxyUrl(media!.url);
       const response = await fetch(url);
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
-      const ext = media!.type === "VIDEO" ? "mp4" : "webp";
+      const ext = media!.type === "VIDEO"
+        ? "mp4"
+        : (media!.url.split(".").pop() || "webp");
       a.download = `media-${media!.id}.${ext}`;
       document.body.appendChild(a);
       a.click();
@@ -128,9 +113,6 @@ export default function MediaModal({ media, showFlagged, onClose, onPrev, onNext
   }
 
   const speeds = [1, 1.25, 1.5, 2, 3, 4];
-  const has360p = !!media!.url360p;
-  const has720p = !!media!.url720p;
-  const hasQualities = media!.type === "VIDEO" && (has360p || has720p);
 
   return (
     <div
@@ -222,30 +204,7 @@ export default function MediaModal({ media, showFlagged, onClose, onPrev, onNext
                   </button>
                 ))}
               </div>
-              {/* Quality controls */}
-              {hasQualities && (
-                <div className="flex items-center gap-1 bg-black/50 backdrop-blur-sm rounded-xl p-1.5">
-                  <span className="text-white/60 text-xs px-2 font-medium">{t("video.quality")}</span>
-                  {([
-                    { key: "auto", label: "Auto" },
-                    ...(has360p ? [{ key: "360p", label: "360p" }] : []),
-                    ...(has720p ? [{ key: "720p", label: "720p" }] : []),
-                    { key: "full", label: "Full" },
-                  ] as { key: VideoQuality; label: string }[]).map((q) => (
-                    <button
-                      key={q.key}
-                      onClick={() => setVideoQuality(q.key)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                        videoQuality === q.key
-                          ? "bg-white text-black"
-                          : "text-white/70 hover:text-white hover:bg-white/10"
-                      }`}
-                    >
-                      {q.label}
-                    </button>
-                  ))}
-                </div>
-              )}
+
             </div>
           </div>
         ) : (

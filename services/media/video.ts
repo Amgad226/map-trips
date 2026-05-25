@@ -1,44 +1,63 @@
 import { spawn } from "child_process";
-import { existsSync } from "fs";
 import { promises as fs } from "fs";
 import path, { join } from "path";
 import { randomUUID } from "crypto";
-import ffmpegStaticPath from "ffmpeg-static";
 
-const TMP_DIR = path.join(/*turbopackIgnore: true*/ process.cwd(), "uploads", "tmp");
+const TMP_DIR = path.join(process.cwd(), "uploads", "tmp");
+
+export interface ProcessVideoOptions {
+  cutStart?: number; // seconds to cut from start
+  cutEnd?: number;   // seconds to cut from end
+  rotation?: "none" | "cw" | "ccw" | "180";
+  compress?: boolean;
+  quality?: number;  // 0-100, default 70
+}
 
 export interface ProcessedVideo {
   buffer: Buffer;
-  buffer360p?: Buffer;
-  buffer720p?: Buffer;
   thumbnailBuffer: Buffer;
   mimeType: string;
   fileSize: number;
-  passthrough?: boolean;
   originalSize: number;
+  passthrough?: boolean;
+  gpuUsed?: boolean;
+  crf?: number;
+  codec?: string;
+}
+
+interface VideoProbe {
+  width: number;
+  height: number;
+  videoCodec: string;
+  audioCodec?: string;
+  duration?: number;
 }
 
 function resolveFfmpegPath(): string {
-  if (ffmpegStaticPath && existsSync(ffmpegStaticPath)) {
-    return ffmpegStaticPath;
-  }
   return "ffmpeg";
+}
+
+function resolveFfprobePath(): string {
+  return "ffprobe";
 }
 
 function runFfmpeg(args: string[], timeoutMs = 600000): Promise<void> {
   return new Promise((resolve, reject) => {
-    const ffmpegPath = resolveFfmpegPath();
-    const proc = spawn(ffmpegPath, args, { stdio: ["ignore", "ignore", "pipe"] });
+    const proc = spawn(resolveFfmpegPath(), args, {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+
     let stderr = "";
     let killed = false;
 
-    const timer = timeoutMs > 0
-      ? setTimeout(() => {
-          killed = true;
-          proc.kill("SIGKILL");
-          reject(new Error("FFmpeg timed out after " + timeoutMs + "ms"));
-        }, timeoutMs)
-      : null;
+    const timer =
+      timeoutMs > 0
+        ? setTimeout(() => {
+            killed = true;
+            proc.kill("SIGKILL");
+            reject(new Error(`FFmpeg timed out after ${timeoutMs}ms`));
+          }, timeoutMs)
+        : null;
 
     proc.stderr.on("data", (data) => {
       stderr += data.toString();
@@ -55,91 +74,116 @@ function runFfmpeg(args: string[], timeoutMs = 600000): Promise<void> {
       if (code === 0) {
         resolve();
       } else {
-        reject(new Error(`FFmpeg exited with code ${code}: ${stderr}`));
+        reject(new Error(`FFmpeg exited with code ${code}\n${stderr}`));
       }
     });
   });
 }
 
-function getScaleFilter(height: number): string {
-  return `scale='trunc(min(${height},iw)/2)*2:-2'`;
-}
-
-interface VideoProbe {
-  width: number;
-  height: number;
-  videoCodec: string;
-  audioCodec?: string;
-  duration?: number;
-}
-
 function probeVideo(inputPath: string): Promise<VideoProbe> {
   return new Promise((resolve, reject) => {
-    const ffmpegPath = resolveFfmpegPath();
-    const proc = spawn(ffmpegPath, ["-i", inputPath], { stdio: ["ignore", "ignore", "pipe"] });
+    const proc = spawn(resolveFfprobePath(), [
+      "-v", "quiet",
+      "-print_format", "json",
+      "-show_streams",
+      "-show_format",
+      inputPath,
+    ]);
+
+    let stdout = "";
     let stderr = "";
+
+    proc.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
 
     proc.stderr.on("data", (data) => {
       stderr += data.toString();
     });
 
     proc.on("close", () => {
-      // ffmpeg exits with code 1 when using -i without output — this is expected
-      const videoMatch = stderr.match(/Stream #\d+:\d+(?:\[\w+\])?(?:\(\w+\))?: Video:\s*(\w+)/);
-      const audioMatch = stderr.match(/Stream #\d+:\d+(?:\[\w+\])?(?:\(\w+\))?: Audio:\s*(\w+)/);
-      const dimMatch = stderr.match(/,\s*(\d+)x(\d+)[,\s]/);
-      const durationMatch = stderr.match(/Duration:\s*(\d+):(\d+):(\d+\.\d+)/);
+      try {
+        const json = JSON.parse(stdout);
+        const videoStream = json.streams.find(
+          (s: any) => s.codec_type === "video"
+        );
+        const audioStream = json.streams.find(
+          (s: any) => s.codec_type === "audio"
+        );
 
-      if (!videoMatch || !dimMatch) {
-        reject(new Error("Could not probe video format"));
-        return;
+        if (!videoStream) {
+          reject(new Error("No video stream found"));
+          return;
+        }
+
+        resolve({
+          width: videoStream.width,
+          height: videoStream.height,
+          videoCodec: videoStream.codec_name,
+          audioCodec: audioStream?.codec_name,
+          duration: json.format?.duration
+            ? parseFloat(json.format.duration)
+            : undefined,
+        });
+      } catch (err) {
+        reject(err);
       }
-
-      const width = parseInt(dimMatch[1], 10);
-      const height = parseInt(dimMatch[2], 10);
-      const duration = durationMatch
-        ? parseInt(durationMatch[1], 10) * 3600 +
-          parseInt(durationMatch[2], 10) * 60 +
-          parseFloat(durationMatch[3])
-        : undefined;
-
-      resolve({
-        width,
-        height,
-        videoCodec: videoMatch[1],
-        audioCodec: audioMatch ? audioMatch[1] : undefined,
-        duration,
-      });
     });
 
-    proc.on("error", (err) => reject(err));
+    proc.on("error", reject);
   });
 }
 
-async function tryPassthrough(inputPath: string, outputPath: string): Promise<boolean> {
-  try {
-    await runFfmpeg(
-      ["-y", "-i", inputPath, "-c", "copy", "-movflags", "+faststart", outputPath],
-      120000
-    );
-    const inputStat = await fs.stat(inputPath);
-    const outputStat = await fs.stat(outputPath);
-    // Allow 15% overhead for moov atom movement / remuxing
-    return outputStat.size <= inputStat.size * 1.15;
-  } catch {
-    return false;
+async function detectGpu(): Promise<boolean> {
+  return new Promise((resolve) => {
+    // Check if h264_nvenc encoder exists
+    const proc = spawn(resolveFfmpegPath(), ["-encoders"]);
+    let stdout = "";
+    proc.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+    proc.on("close", (code) => {
+      if (code !== 0 || !stdout.includes("h264_nvenc")) {
+        resolve(false);
+        return;
+      }
+      // Also check nvidia-smi
+      const nvidia = spawn("nvidia-smi", []);
+      nvidia.on("error", () => resolve(false));
+      nvidia.on("close", (nCode) => resolve(nCode === 0));
+    });
+    proc.on("error", () => resolve(false));
+  });
+}
+
+function getCrfFromQuality(quality: number): number {
+  if (quality >= 80) return 18;
+  if (quality >= 60) return 20;
+  if (quality >= 40) return 23;
+  return 28;
+}
+
+function getRotationFilter(rotation?: string): string | undefined {
+  switch (rotation) {
+    case "cw":
+      return "transpose=1";
+    case "ccw":
+      return "transpose=2";
+    case "180":
+      return "transpose=2,transpose=2";
+    default:
+      return undefined;
   }
 }
 
 export async function processVideo(
   buffer: Buffer,
+  options: ProcessVideoOptions = {},
   onEvent?: (event: string, percent: number) => void
 ): Promise<ProcessedVideo> {
   const id = randomUUID();
   const inputPath = join(TMP_DIR, `${id}-input`);
   const outputPath = join(TMP_DIR, `${id}.mp4`);
-  const output360Path = join(TMP_DIR, `${id}-360p.mp4`);
-  const output720Path = join(TMP_DIR, `${id}-720p.mp4`);
   const thumbPath = join(TMP_DIR, `${id}-thumb.jpg`);
 
   try {
@@ -147,178 +191,138 @@ export async function processVideo(
     await fs.writeFile(inputPath, buffer);
 
     onEvent?.("video:received", 5);
+    onEvent?.("video:probing", 10);
 
-    // Probe input
-    onEvent?.("video:probing", 8);
     const probe = await probeVideo(inputPath);
-    onEvent?.("video:probed", 12);
+    const duration = probe.duration ?? 0;
 
-    const isH264 = probe.videoCodec.toLowerCase().startsWith("h264");
-    const isAac = !probe.audioCodec || probe.audioCodec.toLowerCase().startsWith("aac");
-    const canPassthrough = isH264 && isAac;
+    onEvent?.("video:probed", 15);
 
-    let mainBuffer: Buffer;
-    let buffer360p: Buffer | undefined;
-    let buffer720p: Buffer | undefined;
-    let passthroughUsed = false;
+    // Cutting logic
+    const startCut = Math.max(0, options.cutStart ?? 0);
+    const endCut = Math.max(0, options.cutEnd ?? 0);
+    const endTime = duration > 0 ? Math.max(0, duration - endCut) : undefined;
 
-    const needs720p = probe.width > 720 || probe.height > 720;
-    const needs360p = probe.width > 480 || probe.height > 480;
-    const needsLowerQualities = needs720p || needs360p;
+    if (endTime !== undefined && endTime <= startCut) {
+      throw new Error("Invalid cut range: start cut is greater than or equal to end cut");
+    }
 
-    if (canPassthrough) {
-      onEvent?.("video:passthrough-try", 15);
-      const success = await tryPassthrough(inputPath, outputPath);
+    onEvent?.("video:gpu-check", 20);
+    const useGpu = await detectGpu();
 
-      if (success) {
-        passthroughUsed = true;
-        mainBuffer = await fs.readFile(outputPath);
-        onEvent?.("video:passthrough-done", 40);
+    const hasRotation = !!options.rotation && options.rotation !== "none";
+    const doCompress = options.compress === true;
 
-        if (needsLowerQualities) {
-          onEvent?.("video:lower-encoding", 45);
+    const reencode = hasRotation || doCompress;
 
-          const scale720 = getScaleFilter(720);
-          const scale360 = getScaleFilter(360);
+    let codecArgs: string[] = [];
+    let gpuUsed = false;
+    let crf: number | undefined;
 
-          // Build dynamic filter_complex and maps based on what we actually need
-          const filters: string[] = [];
-          const args: string[] = ["-y", "-i", inputPath];
+    if (!reencode) {
+      // Lossless stream copy (original quality)
+      codecArgs = ["-c", "copy"];
+    } else {
+      const quality = options.quality ?? 70;
+      crf = getCrfFromQuality(quality);
 
-          if (needs720p && needs360p) {
-            filters.push(`[0:v]split=2[v1][v2]; [v1]${scale720}[v1out]; [v2]${scale360}[v2out]`);
-            args.push(
-              "-filter_complex", filters[0],
-              "-map", "[v1out]", "-map", "0:a:0?",
-              "-c:v", "libx264", "-preset", "veryfast", "-crf", "28",
-              "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart",
-              output720Path,
-              "-map", "[v2out]", "-map", "0:a:0?",
-              "-c:v", "libx264", "-preset", "veryfast", "-crf", "30",
-              "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k", "-movflags", "+faststart",
-              output360Path
-            );
-          } else if (needs720p) {
-            filters.push(`[0:v]${scale720}[v1out]`);
-            args.push(
-              "-filter_complex", filters[0],
-              "-map", "[v1out]", "-map", "0:a:0?",
-              "-c:v", "libx264", "-preset", "veryfast", "-crf", "28",
-              "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart",
-              output720Path
-            );
-          } else {
-            // needs360p only
-            filters.push(`[0:v]${scale360}[v1out]`);
-            args.push(
-              "-filter_complex", filters[0],
-              "-map", "[v1out]", "-map", "0:a:0?",
-              "-c:v", "libx264", "-preset", "veryfast", "-crf", "30",
-              "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k", "-movflags", "+faststart",
-              output360Path
-            );
-          }
-
-          await runFfmpeg(args, 600000);
-
-          if (needs720p) {
-            buffer720p = await fs.readFile(output720Path).catch(() => undefined);
-          }
-          if (needs360p) {
-            buffer360p = await fs.readFile(output360Path).catch(() => undefined);
-          }
-          onEvent?.("video:lower-done", 70);
+      if (useGpu && doCompress) {
+        // GPU encoding with compression
+        gpuUsed = true;
+        codecArgs = [
+          "-c:v", "h264_nvenc",
+          "-preset", "p1",
+          "-cq", String(crf),
+          "-c:a", "copy",
+        ];
+      } else {
+        // CPU encoding
+        if (doCompress) {
+          codecArgs = [
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", String(crf),
+            "-c:a", "copy",
+          ];
+        } else {
+          // High quality (visually lossless) for rotation without compression
+          codecArgs = [
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "18",
+            "-c:a", "copy",
+          ];
+          crf = 18;
         }
       }
     }
 
-    if (!passthroughUsed) {
-      onEvent?.("video:full-encoding", 15);
+    const filter = getRotationFilter(options.rotation);
 
-      const scaleMain = getScaleFilter(1080);
-      const scale720 = getScaleFilter(720);
-      const scale360 = getScaleFilter(360);
+    const args: string[] = ["-y", "-i", inputPath];
 
-      await runFfmpeg(
-        [
-          "-y", "-i", inputPath,
-          "-filter_complex",
-          `[0:v]split=3[v1][v2][v3]; [v1]${scaleMain}[v1out]; [v2]${scale720}[v2out]; [v3]${scale360}[v3out]`,
-          "-map", "[v1out]", "-map", "0:a:0?",
-          "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
-          "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
-          outputPath,
-          "-map", "[v2out]", "-map", "0:a:0?",
-          "-c:v", "libx264", "-preset", "veryfast", "-crf", "28",
-          "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart",
-          output720Path,
-          "-map", "[v3out]", "-map", "0:a:0?",
-          "-c:v", "libx264", "-preset", "veryfast", "-crf", "30",
-          "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k", "-movflags", "+faststart",
-          output360Path,
-        ],
-        600000
-      );
-
-      onEvent?.("video:full-done", 65);
-
-      [mainBuffer, buffer720p, buffer360p] = await Promise.all([
-        fs.readFile(outputPath),
-        fs.readFile(output720Path).catch(() => undefined),
-        fs.readFile(output360Path).catch(() => undefined),
-      ]);
+    if (startCut > 0) {
+      args.push("-ss", String(startCut));
+    }
+    if (endTime !== undefined && endTime > 0) {
+      args.push("-to", String(endTime));
     }
 
-    // Generate thumbnail from the best source (passthrough = original, otherwise = re-encoded)
-    onEvent?.("video:thumbnail-encoding", 85);
-    const thumbSource = passthroughUsed ? inputPath : outputPath;
-    let thumbGenerated = false;
-    for (const seekTime of ["00:00:01", "00:00:00"]) {
-      try {
-        await runFfmpeg([
-          "-y",
-          "-ss", seekTime,
-          "-i", thumbSource,
-          "-vframes", "1",
-          "-vf", "scale='trunc(min(400,iw)/2)*2:-2'",
-          "-q:v", "2",
-          thumbPath,
-        ]);
-        if (existsSync(thumbPath)) {
-          thumbGenerated = true;
-          break;
-        }
-      } catch {
-        // Try next seek time
-      }
+    if (filter) {
+      args.push("-vf", filter);
     }
 
-    if (!thumbGenerated) {
-      throw new Error("Failed to generate thumbnail from video");
-    }
-    onEvent?.("video:thumbnail-done", 95);
+    args.push(...codecArgs);
+    args.push("-movflags", "+faststart");
+    args.push("-hide_banner", "-loglevel", "error");
+    args.push(outputPath);
 
-    onEvent?.("video:reading", 97);
-    const thumbBuffer = await fs.readFile(thumbPath);
+    if (!reencode) {
+      onEvent?.("video:copying", 30);
+    } else {
+      onEvent?.("video:encoding", 30);
+    }
+
+    await runFfmpeg(args, 600000);
+
+    const outputStat = await fs.stat(outputPath);
+    const mainBuffer = await fs.readFile(outputPath);
+
+    onEvent?.("video:encoded", 75);
+
+    // Thumbnail
+    onEvent?.("video:thumbnail", 85);
+    const thumbSource = outputPath;
+    const thumbSs = (duration && duration > 1) ? "00:00:01" : "00:00:00";
+    await runFfmpeg([
+      "-y",
+      "-ss", thumbSs,
+      "-i", thumbSource,
+      "-vframes", "1",
+      "-vf", "scale='if(gt(iw,400),400,iw)':-2",
+      "-q:v", "2",
+      thumbPath,
+    ]);
+
+    const thumbnailBuffer = await fs.readFile(thumbPath);
 
     onEvent?.("video:complete", 100);
 
     return {
-      buffer: mainBuffer!,
-      buffer360p,
-      buffer720p,
-      thumbnailBuffer: thumbBuffer,
+      buffer: mainBuffer,
+      thumbnailBuffer,
       mimeType: "video/mp4",
-      fileSize: mainBuffer!.length,
-      passthrough: passthroughUsed,
+      fileSize: outputStat.size,
       originalSize: buffer.length,
+      passthrough: !reencode,
+      gpuUsed,
+      crf,
+      codec: gpuUsed ? "h264_nvenc" : "libx264",
     };
   } finally {
     await Promise.all([
       fs.unlink(inputPath).catch(() => {}),
       fs.unlink(outputPath).catch(() => {}),
-      fs.unlink(output360Path).catch(() => {}),
-      fs.unlink(output720Path).catch(() => {}),
       fs.unlink(thumbPath).catch(() => {}),
     ]);
   }

@@ -2,8 +2,8 @@ import { NextRequest } from "next/server";
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth/session";
-import { processImage } from "@/services/media/image";
-import { processVideo } from "@/services/media/video";
+import { processImage, ProcessImageOptions } from "@/services/media/image";
+import { processVideo, ProcessVideoOptions } from "@/services/media/video";
 import { uploadToR2 } from "@/services/r2/upload";
 import { slugify } from "@/lib/utils";
 
@@ -40,10 +40,21 @@ function validateFile(file: File) {
   return { isImage, isVideo };
 }
 
+function getExtFromMimeType(mimeType: string): string {
+  if (mimeType === "image/jpeg") return "jpg";
+  if (mimeType === "image/webp") return "webp";
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/gif") return "gif";
+  if (mimeType === "image/avif") return "avif";
+  if (mimeType === "video/mp4") return "mp4";
+  const parts = mimeType.split("/");
+  return parts[1] || "bin";
+}
+
 interface ProgressTracker {
   totalR2Bytes: number;
   loadedR2Bytes: number;
-  serverProgress: number;
+  editProgress: number;
   r2Progress: number;
 }
 
@@ -86,12 +97,12 @@ export async function POST(request: NextRequest) {
       const tracker: ProgressTracker = {
         totalR2Bytes: 0,
         loadedR2Bytes: 0,
-        serverProgress: 0,
+        editProgress: 0,
         r2Progress: 0,
       };
 
-      function updateServerProgress(percent: number) {
-        tracker.serverProgress = Math.min(100, Math.max(0, percent));
+      function updateEditProgress(percent: number) {
+        tracker.editProgress = Math.min(100, Math.max(0, percent));
       }
 
       function updateR2Progress() {
@@ -109,7 +120,7 @@ export async function POST(request: NextRequest) {
         event: string,
         message: string,
         opts?: {
-          serverPercent?: number;
+          editPercent?: number;
           r2Loaded?: number;
           r2Total?: number;
           fileIndex?: number;
@@ -117,8 +128,8 @@ export async function POST(request: NextRequest) {
           meta?: Record<string, unknown>;
         }
       ) {
-        if (opts?.serverPercent !== undefined) {
-          updateServerProgress(opts.serverPercent);
+        if (opts?.editPercent !== undefined) {
+          updateEditProgress(opts.editPercent);
         }
         if (opts?.r2Loaded !== undefined && opts?.r2Total !== undefined) {
           tracker.loadedR2Bytes = opts.r2Loaded;
@@ -129,12 +140,23 @@ export async function POST(request: NextRequest) {
           phase: "event",
           event,
           message,
-          serverProgress: tracker.serverProgress,
+          editProgress: tracker.editProgress,
           r2Progress: tracker.r2Progress,
           fileIndex: opts?.fileIndex,
           fileName: opts?.fileName,
           meta: opts?.meta,
         });
+      }
+
+      // Parse options for all files
+      let fileOptions: (ProcessImageOptions | ProcessVideoOptions | null)[] = [];
+      try {
+        const rawOpts = formData.get("fileOptions");
+        if (rawOpts) {
+          fileOptions = JSON.parse(rawOpts.toString());
+        }
+      } catch {
+        // ignore
       }
 
       try {
@@ -146,7 +168,7 @@ export async function POST(request: NextRequest) {
           const nextFileBaseProgress = ((fileIndex + 1) / files.length) * 100;
 
           emit("file:start", `Processing ${file.name}...`, {
-            serverPercent: fileBaseProgress,
+            editPercent: fileBaseProgress,
             fileIndex,
             fileName: file.name,
           });
@@ -155,47 +177,51 @@ export async function POST(request: NextRequest) {
           const buffer = Buffer.from(await file.arrayBuffer());
 
           emit("file:validated", `Validated ${file.name}`, {
-            serverPercent: fileBaseProgress + 2,
+            editPercent: fileBaseProgress + 2,
             fileIndex,
             fileName: file.name,
           });
 
+          const opts = fileOptions[fileIndex] || undefined;
+
           // Process media
           const processed = isImage
-            ? await processImage(buffer)
-            : await processVideo(buffer, (event, _percent) => {
-                // Map video processing events into the file's server progress slice
-                const processingPercent = _percent; // 0-100 from processVideo
-                const sliceSize = 55; // processing takes 55% of the file's server progress
-                const mapped = fileBaseProgress + 5 + (processingPercent / 100) * sliceSize;
-                emit(event, `${file.name}: ${event}`, {
-                  serverPercent: mapped,
-                  fileIndex,
-                  fileName: file.name,
-                  meta: { isVideo: true },
-                });
-              });
+            ? await processImage(buffer, opts as ProcessImageOptions)
+            : await processVideo(
+                buffer,
+                opts as ProcessVideoOptions,
+                (event, _percent) => {
+                  const processingPercent = _percent;
+                  const sliceSize = nextFileBaseProgress - fileBaseProgress - 5;
+                  const mapped = fileBaseProgress + 5 + (processingPercent / 100) * sliceSize;
+                  emit(event, `${file.name}: ${event}`, {
+                    editPercent: mapped,
+                    fileIndex,
+                    fileName: file.name,
+                    meta: { isVideo: true },
+                  });
+                }
+              );
 
           emit("file:processed", `${file.name} processed`, {
-            serverPercent: fileBaseProgress + 60,
+            editPercent: nextFileBaseProgress,
             fileIndex,
             fileName: file.name,
             meta: {
               fileSize: processed.fileSize,
               fileSizeBeforeCompress: file.size,
               passthrough: (processed as { passthrough?: boolean }).passthrough,
+              gpuUsed: (processed as { gpuUsed?: boolean }).gpuUsed,
+              crf: (processed as { crf?: number }).crf,
             },
           });
 
           const uuid = randomUUID();
-          const ext = isImage ? "webp" : "mp4";
+          const ext = getExtFromMimeType(processed.mimeType);
           const thumbExt = isImage ? "webp" : "jpg";
 
           const mediaKey = `${folder}/media/${uuid}.${ext}`;
           const thumbKey = `${folder}/thumbs/${uuid}.${thumbExt}`;
-
-          let url360p: string | undefined;
-          let url720p: string | undefined;
 
           // Calculate total R2 bytes for this file
           const r2Uploads: Array<{ key: string; body: Buffer; contentType: string }> = [
@@ -203,29 +229,10 @@ export async function POST(request: NextRequest) {
             { key: thumbKey, body: processed.thumbnailBuffer, contentType: isImage ? "image/webp" : "image/jpeg" },
           ];
 
-          if (!isImage) {
-            const pv = processed as { buffer360p?: Buffer; buffer720p?: Buffer };
-            if (pv.buffer360p) {
-              r2Uploads.push({
-                key: `${folder}/media/${uuid}-360p.${ext}`,
-                body: pv.buffer360p,
-                contentType: processed.mimeType,
-              });
-            }
-            if (pv.buffer720p) {
-              r2Uploads.push({
-                key: `${folder}/media/${uuid}-720p.${ext}`,
-                body: pv.buffer720p,
-                contentType: processed.mimeType,
-              });
-            }
-          }
-
           const fileR2Total = r2Uploads.reduce((sum, u) => sum + u.body.length, 0);
           let fileR2Loaded = 0;
 
           emit("r2:upload-start", `Uploading ${file.name} to R2...`, {
-            serverPercent: fileBaseProgress + 65,
             r2Loaded: tracker.loadedR2Bytes,
             r2Total: tracker.totalR2Bytes + fileR2Total,
             fileIndex,
@@ -234,7 +241,6 @@ export async function POST(request: NextRequest) {
 
           // Upload main file
           emit("r2:main-uploading", `Uploading main file (${file.name})...`, {
-            serverPercent: fileBaseProgress + 67,
             fileIndex,
             fileName: file.name,
           });
@@ -263,7 +269,6 @@ export async function POST(request: NextRequest) {
 
           // Upload thumbnail
           emit("r2:thumb-uploading", `Uploading thumbnail (${file.name})...`, {
-            serverPercent: fileBaseProgress + 72,
             fileIndex,
             fileName: file.name,
           });
@@ -290,74 +295,8 @@ export async function POST(request: NextRequest) {
             fileName: file.name,
           });
 
-          // Upload video qualities
-          if (!isImage) {
-            const pv = processed as { buffer360p?: Buffer; buffer720p?: Buffer };
-            if (pv.buffer360p) {
-              emit("r2:360-uploading", `Uploading 360p version (${file.name})...`, {
-                serverPercent: fileBaseProgress + 77,
-                fileIndex,
-                fileName: file.name,
-              });
-              const key360 = `${folder}/media/${uuid}-360p.${ext}`;
-              url360p = await uploadToR2({
-                key: key360,
-                body: pv.buffer360p,
-                contentType: processed.mimeType,
-                contentLength: pv.buffer360p.length,
-                onProgress: (loaded, total) => {
-                  const currentLoaded = tracker.loadedR2Bytes - fileR2Loaded + loaded;
-                  emit("r2:360-progress", `Uploading 360p: ${Math.round((loaded / total) * 100)}%`, {
-                    r2Loaded: currentLoaded,
-                    r2Total: tracker.totalR2Bytes,
-                    fileIndex,
-                    fileName: file.name,
-                  });
-                },
-              });
-              fileR2Loaded += pv.buffer360p.length;
-              emit("r2:360-done", `360p version uploaded (${file.name})`, {
-                r2Loaded: tracker.loadedR2Bytes - fileR2Loaded + pv.buffer360p.length,
-                r2Total: tracker.totalR2Bytes,
-                fileIndex,
-                fileName: file.name,
-              });
-            }
-
-            if (pv.buffer720p) {
-              emit("r2:720-uploading", `Uploading 720p version (${file.name})...`, {
-                serverPercent: fileBaseProgress + 82,
-                fileIndex,
-                fileName: file.name,
-              });
-              const key720 = `${folder}/media/${uuid}-720p.${ext}`;
-              url720p = await uploadToR2({
-                key: key720,
-                body: pv.buffer720p,
-                contentType: processed.mimeType,
-                contentLength: pv.buffer720p.length,
-                onProgress: (loaded, total) => {
-                  const currentLoaded = tracker.loadedR2Bytes - fileR2Loaded + loaded;
-                  emit("r2:720-progress", `Uploading 720p: ${Math.round((loaded / total) * 100)}%`, {
-                    r2Loaded: currentLoaded,
-                    r2Total: tracker.totalR2Bytes,
-                    fileIndex,
-                    fileName: file.name,
-                  });
-                },
-              });
-              fileR2Loaded += pv.buffer720p.length;
-              emit("r2:720-done", `720p version uploaded (${file.name})`, {
-                r2Loaded: tracker.loadedR2Bytes - fileR2Loaded + pv.buffer720p.length,
-                r2Total: tracker.totalR2Bytes,
-                fileIndex,
-                fileName: file.name,
-              });
-            }
-          }
-
           emit("db:saving", `Saving ${file.name} to database...`, {
-            serverPercent: fileBaseProgress + 90,
+            editPercent: nextFileBaseProgress,
             fileIndex,
             fileName: file.name,
           });
@@ -370,8 +309,6 @@ export async function POST(request: NextRequest) {
               tripId,
               type: isImage ? "IMAGE" : "VIDEO",
               url,
-              url360p: url360p ?? null,
-              url720p: url720p ?? null,
               thumbnailUrl,
               mimeType: processed.mimeType,
               fileSize: processed.fileSize,
@@ -381,13 +318,13 @@ export async function POST(request: NextRequest) {
           });
 
           emit("db:saved", `${file.name} saved to database`, {
-            serverPercent: nextFileBaseProgress,
+            editPercent: nextFileBaseProgress,
             fileIndex,
             fileName: file.name,
           });
 
           emit("file:complete", `${file.name} completed`, {
-            serverPercent: nextFileBaseProgress,
+            editPercent: nextFileBaseProgress,
             r2Loaded: tracker.loadedR2Bytes,
             r2Total: tracker.totalR2Bytes,
             fileIndex,
@@ -398,14 +335,14 @@ export async function POST(request: NextRequest) {
 
           if (!isLastFile) {
             emit("file:next", `Moving to next file...`, {
-              serverPercent: nextFileBaseProgress,
+              editPercent: nextFileBaseProgress,
               fileIndex: fileIndex + 1,
             });
           }
         }
 
         emit("all:complete", "All files uploaded successfully!", {
-          serverPercent: 100,
+          editPercent: 100,
           r2Loaded: tracker.loadedR2Bytes,
           r2Total: tracker.totalR2Bytes,
         });
@@ -414,7 +351,7 @@ export async function POST(request: NextRequest) {
         controller.close();
       } catch (error: unknown) {
         emit("error", error instanceof Error ? error.message : "Upload failed", {
-          serverPercent: tracker.serverProgress,
+          editPercent: tracker.editProgress,
         });
         send({ phase: "error", progress: 0, message: error instanceof Error ? error.message : "Upload failed" });
         controller.close();

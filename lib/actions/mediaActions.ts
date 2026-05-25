@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth/session";
-import { processImage } from "@/services/media/image";
-import { processVideo } from "@/services/media/video";
+import { processImage, ProcessImageOptions } from "@/services/media/image";
+import { processVideo, ProcessVideoOptions } from "@/services/media/video";
 import { uploadToR2 } from "@/services/r2/upload";
 import { deleteFromR2 } from "@/services/r2/delete";
 import { extractKeyFromUrl } from "@/services/r2/url";
@@ -62,19 +62,43 @@ export async function uploadMedia(tripId: number, formData: FormData) {
   const folder = `${slugify(trip.title)}_${trip.id}`;
   const results = [];
 
-  for (const file of files) {
+  function getExtFromMimeType(mimeType: string): string {
+    if (mimeType === "image/jpeg") return "jpg";
+    if (mimeType === "image/webp") return "webp";
+    if (mimeType === "image/png") return "png";
+    if (mimeType === "image/gif") return "gif";
+    if (mimeType === "image/avif") return "avif";
+    if (mimeType === "video/mp4") return "mp4";
+    const parts = mimeType.split("/");
+    return parts[1] || "bin";
+  }
+
+  // Parse file options if provided
+  let fileOptions: (ProcessImageOptions | ProcessVideoOptions | null)[] = [];
+  try {
+    const rawOpts = formData.get("fileOptions");
+    if (rawOpts) {
+      fileOptions = JSON.parse(rawOpts.toString());
+    }
+  } catch {
+    // ignore
+  }
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
     const { isImage } = validateFile(file);
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    const opts = fileOptions[i] || undefined;
 
     // Process media
     const processed = isImage
-      ? await processImage(buffer)
-      : await processVideo(buffer);
+      ? await processImage(buffer, opts as ProcessImageOptions)
+      : await processVideo(buffer, opts as ProcessVideoOptions);
 
     // Upload to R2
     const uuid = randomUUID();
-    const ext = isImage ? "webp" : "mp4";
+    const ext = getExtFromMimeType(processed.mimeType);
     const thumbExt = isImage ? "webp" : "jpg";
 
     const mediaKey = `${folder}/media/${uuid}.${ext}`;

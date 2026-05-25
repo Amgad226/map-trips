@@ -12,8 +12,9 @@ interface UploadEvent {
   id: number;
   event: string;
   message: string;
-  serverProgress: number;
-  r2Progress: number;
+  upload: number;
+  edit: number;
+  r2: number;
   timestamp: string;
 }
 
@@ -24,11 +25,32 @@ interface FileUploadState {
   status: "queued" | "processing" | "uploading" | "done" | "error";
   progress: number;
   message: string;
-  serverPercent: number;
+  uploadPercent: number;
+  editPercent: number;
   r2Percent: number;
   finalSize?: number;
   originalSize?: number;
   passthrough?: boolean;
+  gpuUsed?: boolean;
+  crf?: number;
+}
+
+interface PerFileOptions {
+  rotation: "none" | "cw" | "ccw" | "180";
+  compress: boolean;
+  quality: number;
+  cutStart: number;
+  cutEnd: number;
+}
+
+function defaultOptions(): PerFileOptions {
+  return {
+    rotation: "none",
+    compress: true,
+    quality: 70,
+    cutStart: 0,
+    cutEnd: 0,
+  };
 }
 
 function formatBytes(bytes: number): string {
@@ -68,11 +90,7 @@ function Spinner({ className = "w-4 h-4" }: { className?: string }) {
   return (
     <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none">
       <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path
-        className="opacity-90"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-      />
+      <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
     </svg>
   );
 }
@@ -120,6 +138,23 @@ function StatusBadge({ status }: { status: FileUploadState["status"] }) {
   }
 }
 
+function ProgressBar({ label, percent, color }: { label: string; percent: number; color: string }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-xs">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="font-semibold text-foreground">{percent}%</span>
+      </div>
+      <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-300 ease-out ${color}`}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function MediaUploader({ tripId }: MediaUploaderProps) {
   const { t } = useTranslation();
   const router = useRouter();
@@ -129,15 +164,22 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [fileStates, setFileStates] = useState<FileUploadState[]>([]);
-  const [globalProgress, setGlobalProgress] = useState({ server: 0, r2: 0, message: "" });
+  const [globalProgress, setGlobalProgress] = useState({ upload: 0, edit: 0, r2: 0, message: "" });
   const [events, setEvents] = useState<UploadEvent[]>([]);
   const [showLog, setShowLog] = useState(false);
+  const [expandedOptions, setExpandedOptions] = useState<Set<number>>(new Set());
+  const [fileOptions, setFileOptions] = useState<PerFileOptions[]>([]);
   const eventIdRef = useRef(0);
 
   const handleFiles = useCallback((newFiles: FileList | null) => {
     if (!newFiles) return;
     const fileList = Array.from(newFiles);
     setFiles((prev) => [...prev, ...fileList]);
+
+    setFileOptions((prev) => [
+      ...prev,
+      ...fileList.map(() => defaultOptions()),
+    ]);
 
     const newPreviews = new Map<string, string>();
     fileList.forEach((file) => {
@@ -179,22 +221,41 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
       setPreviews(newPreviews);
     }
     setFiles((prev) => prev.filter((_, i) => i !== index));
+    setFileOptions((prev) => prev.filter((_, i) => i !== index));
+    setExpandedOptions((prev) => {
+      const next = new Set<number>();
+      prev.forEach((idx) => {
+        if (idx < index) next.add(idx);
+        else if (idx > index) next.add(idx - 1);
+      });
+      return next;
+    });
+  }
+
+  function updateFileOption(index: number, patch: Partial<PerFileOptions>) {
+    setFileOptions((prev) => {
+      const next = [...prev];
+      next[index] = { ...(next[index] ?? defaultOptions()), ...patch };
+      return next;
+    });
   }
 
   function addEvent(
     prev: UploadEvent[],
     event: string,
     message: string,
-    serverProgress: number,
-    r2Progress: number
+    upload: number,
+    edit: number,
+    r2: number
   ): UploadEvent[] {
     const id = ++eventIdRef.current;
     const newEvent: UploadEvent = {
       id,
       event,
       message,
-      serverProgress,
-      r2Progress,
+      upload,
+      edit,
+      r2,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
     };
     return [...prev, newEvent];
@@ -212,11 +273,11 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
 
   function getMessageFromEvent(event: string, defaultMsg: string): string {
     if (event === "video:probing") return "Analyzing video...";
-    if (event === "video:passthrough-try") return "Checking if re-encode is needed...";
-    if (event === "video:passthrough-done") return "Video already optimized — skipping re-encode!";
-    if (event === "video:full-encoding") return "Compressing video...";
-    if (event === "video:lower-encoding") return "Creating smaller versions...";
-    if (event === "video:thumbnail-encoding") return "Creating thumbnail...";
+    if (event === "video:gpu-check") return "Detecting GPU...";
+    if (event === "video:copying") return "Copying streams (no re-encode)...";
+    if (event === "video:encoding") return "Encoding video...";
+    if (event === "video:encoded") return "Encoding complete";
+    if (event === "video:thumbnail") return "Creating thumbnail...";
     if (event.startsWith("r2:")) return "Uploading to cloud...";
     if (event === "file:processed") return "Ready to upload";
     if (event === "db:saving") return "Saving...";
@@ -238,60 +299,63 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
       status: "queued",
       progress: 0,
       message: "Waiting...",
-      serverPercent: 0,
+      uploadPercent: 0,
+      editPercent: 0,
       r2Percent: 0,
       originalSize: f.size,
     }));
     setFileStates(initialStates);
-    setGlobalProgress({ server: 0, r2: 0, message: "Starting upload..." });
+    setGlobalProgress({ upload: 0, edit: 0, r2: 0, message: "Uploading to server..." });
 
     const formData = new FormData();
     formData.append("tripId", tripId.toString());
     files.forEach((file) => formData.append("files", file));
 
-    try {
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
+    const optsArray = files.map((_, i) => fileOptions[i] ?? defaultOptions());
+    formData.append("fileOptions", JSON.stringify(optsArray));
 
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || "Upload failed");
-      }
+    return new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/upload");
+      xhr.setRequestHeader("Accept", "application/x-ndjson");
 
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("No response body");
+      // Upload progress
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const pct = Math.round((e.loaded / e.total) * 100);
+          setGlobalProgress((prev) => ({ ...prev, upload: pct }));
+        }
+      };
 
-      const decoder = new TextDecoder();
-      let buffer = "";
+      // Response text incremental parsing
+      let lastParsedIndex = 0;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      function processChunk(isFinal: boolean) {
+        const text = xhr.responseText;
+        const chunk = text.substring(lastParsedIndex);
+        const lines = chunk.split("\n");
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
+        const completeLines = isFinal ? lines : lines.slice(0, -1);
+        for (const line of completeLines) {
           if (!line.trim()) continue;
           try {
             const data = JSON.parse(line);
             if (data.phase === "error") {
-              throw new Error(data.message || "Upload failed");
+              reject(new Error(data.message || "Upload failed"));
+              return;
             }
             if (data.phase === "done") {
-              setGlobalProgress((prev) => ({ ...prev, server: 100, r2: 100, message: t("upload.complete") }));
+              setGlobalProgress((prev) => ({ ...prev, edit: 100, r2: 100, message: t("upload.complete") }));
             } else if (data.phase === "event") {
               const idx = typeof data.fileIndex === "number" ? data.fileIndex : -1;
               const evt = data.event as string;
               const msg = data.message as string;
-              const srv = data.serverProgress ?? 0;
+              const edit = data.editProgress ?? 0;
               const r2 = data.r2Progress ?? 0;
+              const upload = 100; // once we receive events, upload is done
 
-              setEvents((prev) => addEvent(prev, evt, msg, srv, r2));
-              setGlobalProgress({ server: srv, r2, message: msg });
+              setEvents((prev) => addEvent(prev, evt, msg, upload, edit, r2));
+              setGlobalProgress((prev) => ({ ...prev, upload: prev.upload || upload, edit, r2, message: msg }));
 
               setFileStates((prev) => {
                 const next = [...prev];
@@ -299,13 +363,15 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
                   const state = { ...next[idx] };
                   state.status = getStatusFromEvent(evt);
                   state.message = getMessageFromEvent(evt, msg);
-                  state.serverPercent = srv;
+                  state.editPercent = edit;
                   state.r2Percent = r2;
 
                   if (evt === "file:processed" && data.meta) {
                     state.finalSize = data.meta.fileSize as number;
                     state.originalSize = data.meta.fileSizeBeforeCompress as number;
                     state.passthrough = data.meta.passthrough as boolean;
+                    state.gpuUsed = data.meta.gpuUsed as boolean;
+                    state.crf = data.meta.crf as number;
                   }
 
                   if (evt.startsWith("r2:") && evt.includes("progress")) {
@@ -319,38 +385,197 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
               });
             }
           } catch {
-            // Ignore malformed lines
+            // ignore malformed or incomplete lines
           }
+        }
+
+        if (!isFinal) {
+          lastParsedIndex = text.length - lines[lines.length - 1].length;
         }
       }
 
-      // Mark all as done
-      setFileStates((prev) => prev.map((s) => (s.status !== "error" ? { ...s, status: "done" as const, message: "Complete" } : s)));
+      xhr.onprogress = () => processChunk(false);
 
-      // Clear files after successful upload
-      previews.forEach((url) => URL.revokeObjectURL(url));
-      setFiles([]);
-      setPreviews(new Map());
-      router.refresh();
-    } catch (err: unknown) {
+      xhr.onload = () => {
+        processChunk(true);
+        if (xhr.status >= 200 && xhr.status < 300) {
+          setGlobalProgress((prev) => ({ ...prev, upload: 100, edit: 100, r2: 100, message: t("upload.complete") }));
+          setFileStates((prev) => prev.map((s) => (s.status !== "error" ? { ...s, status: "done" as const, message: "Complete" } : s)));
+          previews.forEach((url) => URL.revokeObjectURL(url));
+          setFiles([]);
+          setPreviews(new Map());
+          router.refresh();
+          resolve();
+        } else {
+          reject(new Error(xhr.statusText || "Upload failed"));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error("Upload failed"));
+      xhr.onabort = () => reject(new Error("Upload aborted"));
+
+      xhr.send(formData);
+    }).catch((err: unknown) => {
       if (err instanceof Error) {
         setError(err.message);
       } else {
         setError(t("media.uploadFailed"));
       }
       setFileStates((prev) => prev.map((s) => (s.status !== "done" ? { ...s, status: "error" as const, message: "Failed" } : s)));
-    } finally {
+    }).finally(() => {
       setUploading(false);
       setTimeout(() => {
         setFileStates([]);
         setEvents([]);
-        setGlobalProgress({ server: 0, r2: 0, message: "" });
-      }, 4000);
-    }
+        setGlobalProgress({ upload: 0, edit: 0, r2: 0, message: "" });
+      }, 6000);
+    });
   }
 
   const activeCount = useMemo(() => fileStates.filter((s) => s.status === "processing" || s.status === "uploading").length, [fileStates]);
   const doneCount = useMemo(() => fileStates.filter((s) => s.status === "done").length, [fileStates]);
+
+  function renderOptionsPanel(file: File, index: number) {
+    const isVideo = file.type.startsWith("video/");
+    const isImage = file.type.startsWith("image/");
+    const isSmallImage = isImage && file.size < 500 * 1024;
+    const opts = fileOptions[index] ?? defaultOptions();
+
+    if (isSmallImage) {
+      return (
+        <div className="pt-1">
+          <span className="text-[10px] text-muted-foreground">Small image — no edits</span>
+        </div>
+      );
+    }
+
+    return (
+      <div className="pt-1">
+        <button
+          type="button"
+          onClick={() =>
+            setExpandedOptions((prev) => {
+              const next = new Set(prev);
+              if (next.has(index)) next.delete(index);
+              else next.add(index);
+              return next;
+            })
+          }
+          className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-0.5 transition-colors"
+        >
+          <svg
+            className={`w-3 h-3 transition-transform ${expandedOptions.has(index) ? "rotate-180" : ""}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+          {expandedOptions.has(index) ? "Hide options" : "Edit options"}
+        </button>
+
+        {expandedOptions.has(index) && (
+          <div className="mt-1.5 space-y-2 p-2 rounded-lg bg-muted/50 border border-border/50">
+            {/* Cut — videos only */}
+            {isVideo && (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-muted-foreground block mb-0.5">Cut start (s)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={opts.cutStart}
+                    onChange={(e) =>
+                      updateFileOption(index, { cutStart: Math.max(0, parseFloat(e.target.value) || 0) })
+                    }
+                    className="w-full text-[10px] px-1.5 py-1 rounded border border-border bg-background"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground block mb-0.5">Cut end (s)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={opts.cutEnd}
+                    onChange={(e) =>
+                      updateFileOption(index, { cutEnd: Math.max(0, parseFloat(e.target.value) || 0) })
+                    }
+                    className="w-full text-[10px] px-1.5 py-1 rounded border border-border bg-background"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Rotation */}
+            <div>
+              <label className="text-[10px] text-muted-foreground block mb-0.5">Rotation</label>
+              <select
+                value={opts.rotation}
+                onChange={(e) =>
+                  updateFileOption(index, {
+                    rotation: e.target.value as PerFileOptions["rotation"],
+                  })
+                }
+                className="w-full text-[10px] px-1.5 py-1 rounded border border-border bg-background"
+              >
+                <option value="none">No rotation</option>
+                <option value="cw">90° clockwise</option>
+                <option value="ccw">90° counterclockwise</option>
+                <option value="180">180°</option>
+              </select>
+            </div>
+
+            {/* Compress toggle */}
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] text-muted-foreground">Compress</label>
+              <button
+                type="button"
+                onClick={() => updateFileOption(index, { compress: !opts.compress })}
+                className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
+                  opts.compress ? "bg-primary" : "bg-muted-foreground/30"
+                }`}
+              >
+                <span
+                  className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform ${
+                    opts.compress ? "translate-x-3.5" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Quality slider */}
+            {opts.compress && (
+              <div>
+                <div className="flex justify-between">
+                  <label className="text-[10px] text-muted-foreground">Quality</label>
+                  <span className="text-[10px] font-medium">{opts.quality}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={20}
+                  max={90}
+                  step={10}
+                  value={opts.quality}
+                  onChange={(e) =>
+                    updateFileOption(index, {
+                      quality: parseInt(e.target.value, 10),
+                    })
+                  }
+                  className="w-full h-1 mt-1 accent-primary"
+                />
+                <div className="flex justify-between text-[9px] text-muted-foreground mt-0.5">
+                  <span>Smaller</span>
+                  <span>Better</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -419,33 +644,9 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
                   </span>
                 </div>
 
-                {/* Server progress */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">{t("upload.serverUpload")}</span>
-                    <span className="font-semibold text-foreground">{globalProgress.server}%</span>
-                  </div>
-                  <div className="h-2.5 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all duration-300 ease-out"
-                      style={{ width: `${globalProgress.server}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* R2 progress */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">{t("upload.r2Storage")}</span>
-                    <span className="font-semibold text-foreground">{globalProgress.r2}%</span>
-                  </div>
-                  <div className="h-2.5 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-emerald-500 transition-all duration-300 ease-out"
-                      style={{ width: `${globalProgress.r2}%` }}
-                    />
-                  </div>
-                </div>
+                <ProgressBar label="Upload to server" percent={globalProgress.upload} color="bg-primary" />
+                <ProgressBar label="Editing" percent={globalProgress.edit} color="bg-amber-500" />
+                <ProgressBar label="Upload to cloud (R2)" percent={globalProgress.r2} color="bg-emerald-500" />
 
                 {/* Event log toggle */}
                 {events.length > 0 && (
@@ -481,6 +682,7 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
             {files.map((file, index) => {
               const state = fileStates[index];
               const isVideo = file.type.startsWith("video/");
+              const isImage = file.type.startsWith("image/");
               const previewUrl = previews.get(file.name);
 
               return (
@@ -524,13 +726,21 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
                       </div>
                     )}
 
-                    {/* Video badge */}
+                    {/* Type badge */}
                     {isVideo && (
                       <div className="absolute top-1.5 left-1.5 bg-black/60 backdrop-blur-sm text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                         </svg>
                         VIDEO
+                      </div>
+                    )}
+                    {isImage && file.size < 500 * 1024 && (
+                      <div className="absolute top-1.5 left-1.5 bg-black/60 backdrop-blur-sm text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        SMALL
                       </div>
                     )}
 
@@ -588,6 +798,24 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
                     {state?.status === "processing" && state.passthrough && (
                       <div className="pt-0.5">
                         <PassthroughBadge />
+                      </div>
+                    )}
+                    {state?.status === "done" && state.gpuUsed && (
+                      <div className="flex items-center gap-1 pt-0.5">
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-violet-600 bg-violet-50 dark:bg-violet-950/30 dark:text-violet-400 px-1.5 py-0.5 rounded-full border border-violet-100 dark:border-violet-900">
+                          GPU
+                        </span>
+                        {state.crf !== undefined && (
+                          <span className="text-[10px] text-muted-foreground">CRF {state.crf}</span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Options panel */}
+                    {(isVideo || (isImage && file.size >= 500 * 1024)) && !uploading && renderOptionsPanel(file, index)}
+                    {isImage && file.size < 500 * 1024 && !uploading && (
+                      <div className="pt-1">
+                        <span className="text-[10px] text-muted-foreground">Small image — no edits</span>
                       </div>
                     )}
                   </div>
