@@ -2,8 +2,8 @@ import type { NextConfig } from "next";
 import dotenv from "dotenv"
 dotenv.config();
 const nextConfig: NextConfig = {
-  basePath: process.env.BASE_PATH  ?? "",
-  assetPrefix: process.env.ASSET_PREFIX ?? "",
+  basePath: process.env.BASE_PATH  ?? "/map-trips",
+  assetPrefix: process.env.ASSET_PREFIX ?? "/map-trips",
   images: {
     remotePatterns: [
       {
