@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/navigation";
 
@@ -12,9 +12,6 @@ interface UploadEvent {
   id: number;
   event: string;
   message: string;
-  upload: number;
-  edit: number;
-  r2: number;
   timestamp: string;
 }
 
@@ -23,7 +20,6 @@ interface FileUploadState {
   size: number;
   type: string;
   status: "queued" | "processing" | "uploading" | "done" | "error";
-  progress: number;
   message: string;
   uploadPercent: number;
   editPercent: number;
@@ -138,16 +134,16 @@ function StatusBadge({ status }: { status: FileUploadState["status"] }) {
   }
 }
 
-function ProgressBar({ label, percent, color }: { label: string; percent: number; color: string }) {
+function MiniBar({ label, percent, colorClass }: { label: string; percent: number; colorClass: string }) {
   return (
-    <div className="space-y-1">
-      <div className="flex justify-between text-xs">
+    <div className="space-y-0.5">
+      <div className="flex justify-between text-[9px]">
         <span className="text-muted-foreground">{label}</span>
-        <span className="font-semibold text-foreground">{percent}%</span>
+        <span className="font-medium tabular-nums">{percent}%</span>
       </div>
-      <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all duration-300 ease-out ${color}`}
+          className={`h-full rounded-full transition-all duration-300 ease-out ${colorClass}`}
           style={{ width: `${percent}%` }}
         />
       </div>
@@ -164,7 +160,6 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [fileStates, setFileStates] = useState<FileUploadState[]>([]);
-  const [globalProgress, setGlobalProgress] = useState({ upload: 0, edit: 0, r2: 0, message: "" });
   const [events, setEvents] = useState<UploadEvent[]>([]);
   const [showLog, setShowLog] = useState(false);
   const [expandedOptions, setExpandedOptions] = useState<Set<number>>(new Set());
@@ -175,11 +170,7 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
     if (!newFiles) return;
     const fileList = Array.from(newFiles);
     setFiles((prev) => [...prev, ...fileList]);
-
-    setFileOptions((prev) => [
-      ...prev,
-      ...fileList.map(() => defaultOptions()),
-    ]);
+    setFileOptions((prev) => [...prev, ...fileList.map(() => defaultOptions())]);
 
     const newPreviews = new Map<string, string>();
     fileList.forEach((file) => {
@@ -240,25 +231,14 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
     });
   }
 
-  function addEvent(
-    prev: UploadEvent[],
-    event: string,
-    message: string,
-    upload: number,
-    edit: number,
-    r2: number
-  ): UploadEvent[] {
+  function addEvent(prev: UploadEvent[], event: string, message: string): UploadEvent[] {
     const id = ++eventIdRef.current;
-    const newEvent: UploadEvent = {
+    return [...prev, {
       id,
       event,
       message,
-      upload,
-      edit,
-      r2,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-    };
-    return [...prev, newEvent];
+    }];
   }
 
   function getStatusFromEvent(event: string): FileUploadState["status"] {
@@ -272,16 +252,26 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
   }
 
   function getMessageFromEvent(event: string, defaultMsg: string): string {
-    if (event === "video:probing") return "Analyzing video...";
-    if (event === "video:gpu-check") return "Detecting GPU...";
-    if (event === "video:copying") return "Copying streams (no re-encode)...";
-    if (event === "video:encoding") return "Encoding video...";
-    if (event === "video:encoded") return "Encoding complete";
-    if (event === "video:thumbnail") return "Creating thumbnail...";
-    if (event.startsWith("r2:")) return "Uploading to cloud...";
-    if (event === "file:processed") return "Ready to upload";
+    if (event === "video:probing") return "Analyzing...";
+    if (event === "video:gpu-check") return "GPU check...";
+    if (event === "video:copying") return "Copying...";
+    if (event === "video:encoding") return "Encoding...";
+    if (event === "video:encoded") return "Encoded";
+    if (event === "video:thumbnail") return "Thumbnail...";
+    if (event.startsWith("r2:")) return "Cloud...";
+    if (event === "file:processed") return "Ready";
     if (event === "db:saving") return "Saving...";
     return defaultMsg;
+  }
+
+  function computeFilePercent(fileIndex: number, totalFiles: number, globalPercent: number): number {
+    if (totalFiles === 0) return 0;
+    const slice = 100 / totalFiles;
+    const fileStart = fileIndex * slice;
+    const fileEnd = fileStart + slice;
+    if (globalPercent <= fileStart) return 0;
+    if (globalPercent >= fileEnd) return 100;
+    return Math.round(((globalPercent - fileStart) / slice) * 100);
   }
 
   async function handleUpload() {
@@ -292,12 +282,13 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
     setEvents([]);
     setShowLog(false);
 
+    const totalFiles = files.length;
+
     const initialStates: FileUploadState[] = files.map((f) => ({
       name: f.name,
       size: f.size,
       type: f.type,
       status: "queued",
-      progress: 0,
       message: "Waiting...",
       uploadPercent: 0,
       editPercent: 0,
@@ -305,12 +296,10 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
       originalSize: f.size,
     }));
     setFileStates(initialStates);
-    setGlobalProgress({ upload: 0, edit: 0, r2: 0, message: "Uploading to server..." });
 
     const formData = new FormData();
     formData.append("tripId", tripId.toString());
     files.forEach((file) => formData.append("files", file));
-
     const optsArray = files.map((_, i) => fileOptions[i] ?? defaultOptions());
     formData.append("fileOptions", JSON.stringify(optsArray));
 
@@ -319,23 +308,26 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
       xhr.open("POST", "/api/upload");
       xhr.setRequestHeader("Accept", "application/x-ndjson");
 
-      // Upload progress
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) {
           const pct = Math.round((e.loaded / e.total) * 100);
-          setGlobalProgress((prev) => ({ ...prev, upload: pct }));
+          setFileStates((prev) => prev.map((s) => ({
+            ...s,
+            uploadPercent: pct,
+            status: pct < 100 ? (s.status === "queued" ? "processing" : s.status) : s.status,
+          })));
         }
       };
 
-      // Response text incremental parsing
       let lastParsedIndex = 0;
+      let globalUploadDone = false;
 
       function processChunk(isFinal: boolean) {
         const text = xhr.responseText;
         const chunk = text.substring(lastParsedIndex);
         const lines = chunk.split("\n");
-
         const completeLines = isFinal ? lines : lines.slice(0, -1);
+
         for (const line of completeLines) {
           if (!line.trim()) continue;
           try {
@@ -345,41 +337,64 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
               return;
             }
             if (data.phase === "done") {
-              setGlobalProgress((prev) => ({ ...prev, edit: 100, r2: 100, message: t("upload.complete") }));
+              setFileStates((prev) =>
+                prev.map((s) => ({
+                  ...s,
+                  uploadPercent: 100,
+                  editPercent: 100,
+                  r2Percent: 100,
+                  status: s.status !== "error" ? "done" : s.status,
+                  message: s.status !== "error" ? "Complete" : s.message,
+                }))
+              );
             } else if (data.phase === "event") {
               const idx = typeof data.fileIndex === "number" ? data.fileIndex : -1;
               const evt = data.event as string;
               const msg = data.message as string;
-              const edit = data.editProgress ?? 0;
-              const r2 = data.r2Progress ?? 0;
-              const upload = 100; // once we receive events, upload is done
+              const globalEdit = data.editProgress ?? 0;
+              const globalR2 = data.r2Progress ?? 0;
 
-              setEvents((prev) => addEvent(prev, evt, msg, upload, edit, r2));
-              setGlobalProgress((prev) => ({ ...prev, upload: prev.upload || upload, edit, r2, message: msg }));
+              if (!globalUploadDone && (data.uploadProgress >= 100 || globalEdit > 0 || globalR2 > 0)) {
+                globalUploadDone = true;
+              }
+
+              setEvents((prev) => addEvent(prev, evt, msg));
 
               setFileStates((prev) => {
                 const next = [...prev];
-                if (idx >= 0 && idx < next.length) {
-                  const state = { ...next[idx] };
-                  state.status = getStatusFromEvent(evt);
-                  state.message = getMessageFromEvent(evt, msg);
-                  state.editPercent = edit;
-                  state.r2Percent = r2;
+                const total = next.length;
 
-                  if (evt === "file:processed" && data.meta) {
-                    state.finalSize = data.meta.fileSize as number;
-                    state.originalSize = data.meta.fileSizeBeforeCompress as number;
-                    state.passthrough = data.meta.passthrough as boolean;
-                    state.gpuUsed = data.meta.gpuUsed as boolean;
-                    state.crf = data.meta.crf as number;
+                for (let i = 0; i < total; i++) {
+                  const state = { ...next[i] };
+
+                  // Upload: shared across all files
+                  if (globalUploadDone || state.uploadPercent > 0) {
+                    state.uploadPercent = Math.max(state.uploadPercent, 100);
                   }
 
-                  if (evt.startsWith("r2:") && evt.includes("progress")) {
-                    const match = msg.match(/(\d+)%/);
-                    if (match) state.progress = parseInt(match[1], 10);
+                  // Edit: slice per file
+                  state.editPercent = computeFilePercent(i, total, globalEdit);
+
+                  // R2: slice per file
+                  state.r2Percent = computeFilePercent(i, total, globalR2);
+
+                  // Status & message for the active file
+                  if (i === idx) {
+                    state.status = getStatusFromEvent(evt);
+                    state.message = getMessageFromEvent(evt, msg);
+
+                    if (evt === "file:processed" && data.meta) {
+                      state.finalSize = data.meta.fileSize as number;
+                      state.originalSize = data.meta.fileSizeBeforeCompress as number;
+                      state.passthrough = data.meta.passthrough as boolean;
+                      state.gpuUsed = data.meta.gpuUsed as boolean;
+                      state.crf = data.meta.crf as number;
+                    }
+                  } else if (state.status === "queued" && state.uploadPercent > 0) {
+                    state.status = "processing";
                   }
 
-                  next[idx] = state;
+                  next[i] = state;
                 }
                 return next;
               });
@@ -399,8 +414,16 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
       xhr.onload = () => {
         processChunk(true);
         if (xhr.status >= 200 && xhr.status < 300) {
-          setGlobalProgress((prev) => ({ ...prev, upload: 100, edit: 100, r2: 100, message: t("upload.complete") }));
-          setFileStates((prev) => prev.map((s) => (s.status !== "error" ? { ...s, status: "done" as const, message: "Complete" } : s)));
+          setFileStates((prev) =>
+            prev.map((s) => ({
+              ...s,
+              uploadPercent: 100,
+              editPercent: 100,
+              r2Percent: 100,
+              status: s.status !== "error" ? "done" : s.status,
+              message: s.status !== "error" ? "Complete" : s.message,
+            }))
+          );
           previews.forEach((url) => URL.revokeObjectURL(url));
           setFiles([]);
           setPreviews(new Map());
@@ -421,19 +444,15 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
       } else {
         setError(t("media.uploadFailed"));
       }
-      setFileStates((prev) => prev.map((s) => (s.status !== "done" ? { ...s, status: "error" as const, message: "Failed" } : s)));
+      setFileStates((prev) => prev.map((s) => (s.status !== "done" ? { ...s, status: "error", message: "Failed" } : s)));
     }).finally(() => {
       setUploading(false);
       setTimeout(() => {
         setFileStates([]);
         setEvents([]);
-        setGlobalProgress({ upload: 0, edit: 0, r2: 0, message: "" });
       }, 6000);
     });
   }
-
-  const activeCount = useMemo(() => fileStates.filter((s) => s.status === "processing" || s.status === "uploading").length, [fileStates]);
-  const doneCount = useMemo(() => fileStates.filter((s) => s.status === "done").length, [fileStates]);
 
   function renderOptionsPanel(file: File, index: number) {
     const isVideo = file.type.startsWith("video/");
@@ -476,7 +495,6 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
 
         {expandedOptions.has(index) && (
           <div className="mt-1.5 space-y-2 p-2 rounded-lg bg-muted/50 border border-border/50">
-            {/* Cut — videos only */}
             {isVideo && (
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -486,9 +504,7 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
                     min={0}
                     step={1}
                     value={opts.cutStart}
-                    onChange={(e) =>
-                      updateFileOption(index, { cutStart: Math.max(0, parseFloat(e.target.value) || 0) })
-                    }
+                    onChange={(e) => updateFileOption(index, { cutStart: Math.max(0, parseFloat(e.target.value) || 0) })}
                     className="w-full text-[10px] px-1.5 py-1 rounded border border-border bg-background"
                   />
                 </div>
@@ -499,25 +515,18 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
                     min={0}
                     step={1}
                     value={opts.cutEnd}
-                    onChange={(e) =>
-                      updateFileOption(index, { cutEnd: Math.max(0, parseFloat(e.target.value) || 0) })
-                    }
+                    onChange={(e) => updateFileOption(index, { cutEnd: Math.max(0, parseFloat(e.target.value) || 0) })}
                     className="w-full text-[10px] px-1.5 py-1 rounded border border-border bg-background"
                   />
                 </div>
               </div>
             )}
 
-            {/* Rotation */}
             <div>
               <label className="text-[10px] text-muted-foreground block mb-0.5">Rotation</label>
               <select
                 value={opts.rotation}
-                onChange={(e) =>
-                  updateFileOption(index, {
-                    rotation: e.target.value as PerFileOptions["rotation"],
-                  })
-                }
+                onChange={(e) => updateFileOption(index, { rotation: e.target.value as PerFileOptions["rotation"] })}
                 className="w-full text-[10px] px-1.5 py-1 rounded border border-border bg-background"
               >
                 <option value="none">No rotation</option>
@@ -527,7 +536,6 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
               </select>
             </div>
 
-            {/* Compress toggle */}
             <div className="flex items-center justify-between">
               <label className="text-[10px] text-muted-foreground">Compress</label>
               <button
@@ -545,7 +553,6 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
               </button>
             </div>
 
-            {/* Quality slider */}
             {opts.compress && (
               <div>
                 <div className="flex justify-between">
@@ -558,11 +565,7 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
                   max={90}
                   step={10}
                   value={opts.quality}
-                  onChange={(e) =>
-                    updateFileOption(index, {
-                      quality: parseInt(e.target.value, 10),
-                    })
-                  }
+                  onChange={(e) => updateFileOption(index, { quality: parseInt(e.target.value, 10) })}
                   className="w-full h-1 mt-1 accent-primary"
                 />
                 <div className="flex justify-between text-[9px] text-muted-foreground mt-0.5">
@@ -576,6 +579,9 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
       </div>
     );
   }
+
+  const activeCount = fileStates.filter((s) => s.status === "processing" || s.status === "uploading").length;
+  const doneCount = fileStates.filter((s) => s.status === "done").length;
 
   return (
     <div className="space-y-4">
@@ -624,31 +630,24 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
 
       {files.length > 0 && (
         <div className="space-y-4">
-          {/* Global progress panel */}
+          {/* Global status header */}
           {uploading && (
             <div className="rounded-2xl bg-card border border-border overflow-hidden shadow-sm">
-              <div className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {activeCount > 0 ? (
-                      <Spinner className="w-4 h-4 text-primary" />
-                    ) : doneCount > 0 ? (
-                      <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    ) : null}
-                    <p className="text-sm font-semibold text-foreground">{globalProgress.message || "Uploading..."}</p>
-                  </div>
-                  <span className="text-xs text-muted-foreground font-medium">
-                    {doneCount}/{fileStates.length} done
-                  </span>
+              <div className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {activeCount > 0 ? (
+                    <Spinner className="w-4 h-4 text-primary" />
+                  ) : doneCount > 0 ? (
+                    <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : null}
+                  <p className="text-sm font-semibold text-foreground">
+                    {doneCount === files.length && doneCount > 0
+                      ? t("upload.complete")
+                      : `${doneCount}/${files.length} done`}
+                  </p>
                 </div>
-
-                <ProgressBar label="Upload to server" percent={globalProgress.upload} color="bg-primary" />
-                <ProgressBar label="Editing" percent={globalProgress.edit} color="bg-amber-500" />
-                <ProgressBar label="Upload to cloud (R2)" percent={globalProgress.r2} color="bg-emerald-500" />
-
-                {/* Event log toggle */}
                 {events.length > 0 && (
                   <button
                     onClick={() => setShowLog((v) => !v)}
@@ -661,7 +660,6 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
                   </button>
                 )}
               </div>
-
               {showLog && events.length > 0 && (
                 <div className="border-t border-border max-h-48 overflow-y-auto">
                   <div className="px-4 py-2 space-y-1">
@@ -684,18 +682,19 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
               const isVideo = file.type.startsWith("video/");
               const isImage = file.type.startsWith("image/");
               const previewUrl = previews.get(file.name);
+              const isActive = state && (state.status === "processing" || state.status === "uploading");
+              const isDone = state?.status === "done";
+              const isError = state?.status === "error";
 
               return (
                 <div
                   key={`${file.name}-${index}`}
                   className={`relative rounded-xl border bg-card overflow-hidden transition-all duration-300 ${
-                    state?.status === "processing"
+                    isActive
                       ? "border-amber-300 dark:border-amber-800 shadow-sm ring-1 ring-amber-200 dark:ring-amber-900"
-                      : state?.status === "uploading"
-                      ? "border-sky-300 dark:border-sky-800 shadow-sm ring-1 ring-sky-200 dark:ring-sky-900"
-                      : state?.status === "done"
+                      : isDone
                       ? "border-emerald-200 dark:border-emerald-900"
-                      : state?.status === "error"
+                      : isError
                       ? "border-red-200 dark:border-red-900"
                       : "border-border hover:shadow-md"
                   }`}
@@ -704,29 +703,18 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
                   <div className="relative aspect-square bg-muted">
                     {previewUrl ? (
                       isVideo ? (
-                        <video
-                          src={previewUrl}
-                          className="w-full h-full object-cover"
-                          muted
-                          preload="metadata"
-                        />
+                        <video src={previewUrl} className="w-full h-full object-cover" muted preload="metadata" />
                       ) : (
                         <img src={previewUrl} alt={file.name} className="w-full h-full object-cover" />
                       )
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
                         <svg className="w-8 h-8 text-muted-foreground/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={1.5}
-                            d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z"
-                          />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
                         </svg>
                       </div>
                     )}
 
-                    {/* Type badge */}
                     {isVideo && (
                       <div className="absolute top-1.5 left-1.5 bg-black/60 backdrop-blur-sm text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -744,7 +732,6 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
                       </div>
                     )}
 
-                    {/* Remove button (only when not uploading) */}
                     {!uploading && (
                       <button
                         type="button"
@@ -755,16 +742,14 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
                       </button>
                     )}
 
-                    {/* Progress overlay during active upload */}
-                    {state && (state.status === "processing" || state.status === "uploading") && (
-                      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex flex-col items-center justify-center gap-2">
+                    {isActive && (
+                      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex flex-col items-center justify-center gap-1.5">
                         <Spinner className="w-6 h-6 text-white" />
-                        <span className="text-[10px] font-semibold text-white/90">{state.progress > 0 ? `${state.progress}%` : state.message}</span>
+                        <span className="text-[10px] font-semibold text-white/90">{state.message}</span>
                       </div>
                     )}
 
-                    {/* Done overlay */}
-                    {state?.status === "done" && (
+                    {isDone && (
                       <div className="absolute inset-0 bg-emerald-500/10 flex items-center justify-center">
                         <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -785,8 +770,17 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
                       {state && <StatusBadge status={state.status} />}
                     </div>
 
+                    {/* Per-file progress bars */}
+                    {uploading && state && (
+                      <div className="space-y-1 pt-0.5">
+                        <MiniBar label="Upload" percent={state.uploadPercent} colorClass="bg-primary" />
+                        <MiniBar label="Edit" percent={state.editPercent} colorClass="bg-amber-500" />
+                        <MiniBar label="Cloud" percent={state.r2Percent} colorClass="bg-emerald-500" />
+                      </div>
+                    )}
+
                     {/* Size comparison */}
-                    {state?.status === "done" && state.originalSize && state.finalSize && (
+                    {isDone && state.originalSize && state.finalSize && (
                       <div className="flex items-center gap-1.5 pt-0.5 border-t border-border/50">
                         <span className="text-[10px] text-muted-foreground line-through">{formatBytes(state.originalSize)}</span>
                         <span className="text-[10px] font-semibold text-foreground">{formatBytes(state.finalSize)}</span>
@@ -795,12 +789,12 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
                       </div>
                     )}
 
-                    {state?.status === "processing" && state.passthrough && (
+                    {isActive && state.passthrough && (
                       <div className="pt-0.5">
                         <PassthroughBadge />
                       </div>
                     )}
-                    {state?.status === "done" && state.gpuUsed && (
+                    {isDone && state.gpuUsed && (
                       <div className="flex items-center gap-1 pt-0.5">
                         <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-violet-600 bg-violet-50 dark:bg-violet-950/30 dark:text-violet-400 px-1.5 py-0.5 rounded-full border border-violet-100 dark:border-violet-900">
                           GPU

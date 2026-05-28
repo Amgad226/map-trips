@@ -210,10 +210,18 @@ export async function processVideo(
     onEvent?.("video:gpu-check", 20);
     const useGpu = await detectGpu();
 
-    const hasRotation = !!options.rotation && options.rotation !== "none";
-    const doCompress = options.compress === true;
+    // MP4 container only supports a subset of codecs for stream copy.
+    // If the input codec isn't H.264 (video) or AAC (audio), we must re-encode.
+    const isH264 = probe.videoCodec.toLowerCase() === "h264";
+    const isAac = !probe.audioCodec || probe.audioCodec.toLowerCase() === "aac";
 
-    const reencode = hasRotation || doCompress;
+    const hasRotation = !!options.rotation && options.rotation !== "none";
+    const wantsCompress = options.compress === true;
+
+    const needsVideoReencode = !isH264 || hasRotation || wantsCompress;
+    const needsAudioReencode = !!probe.audioCodec && !isAac;
+
+    const reencode = needsVideoReencode || needsAudioReencode;
 
     let codecArgs: string[] = [];
     let gpuUsed = false;
@@ -224,36 +232,23 @@ export async function processVideo(
       codecArgs = ["-c", "copy"];
     } else {
       const quality = options.quality ?? 70;
-      crf = getCrfFromQuality(quality);
+      crf = wantsCompress ? getCrfFromQuality(quality) : 18;
 
-      if (useGpu && doCompress) {
-        // GPU encoding with compression
-        gpuUsed = true;
-        codecArgs = [
-          "-c:v", "h264_nvenc",
-          "-preset", "p1",
-          "-cq", String(crf),
-          "-c:a", "copy",
-        ];
-      } else {
-        // CPU encoding
-        if (doCompress) {
-          codecArgs = [
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", String(crf),
-            "-c:a", "copy",
-          ];
+      if (needsVideoReencode) {
+        if (useGpu && wantsCompress) {
+          gpuUsed = true;
+          codecArgs.push("-c:v", "h264_nvenc", "-preset", "p1", "-cq", String(crf));
         } else {
-          // High quality (visually lossless) for rotation without compression
-          codecArgs = [
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "18",
-            "-c:a", "copy",
-          ];
-          crf = 18;
+          codecArgs.push("-c:v", "libx264", "-preset", "veryfast", "-crf", String(crf));
         }
+      } else {
+        codecArgs.push("-c:v", "copy");
+      }
+
+      if (needsAudioReencode) {
+        codecArgs.push("-c:a", "aac", "-b:a", "128k");
+      } else {
+        codecArgs.push("-c:a", "copy");
       }
     }
 

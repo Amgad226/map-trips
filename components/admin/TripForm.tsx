@@ -39,6 +39,7 @@ export default function TripForm({ trip, action }: TripFormProps) {
       } else {
         setError(t("tripForm.error"));
       }
+    } finally {
       setLoading(false);
     }
   }
