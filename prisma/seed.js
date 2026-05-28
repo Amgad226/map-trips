@@ -1,9 +1,11 @@
-import { PrismaClient } from "@prisma/client";
-import { PrismaLibSql } from "@prisma/adapter-libsql";
-import bcrypt from "bcryptjs";
-import dotenv from "dotenv"; 
-dotenv.config(); 
-const adapter = new PrismaLibSql({ url: process.env.DATABASE_URL! });
+const { PrismaClient } = require("@prisma/client");
+const { PrismaLibSql } = require("@prisma/adapter-libsql");
+const bcrypt = require("bcryptjs");
+const dotenv = require("dotenv");
+
+dotenv.config();
+
+const adapter = new PrismaLibSql({ url: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
