@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  basePath: "/map-trips",
-  assetPrefix: "/map-trips",
+  basePath: "/map-trips/",
+  assetPrefix: "/map-trips/",
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "*.r2.dev" },
