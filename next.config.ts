@@ -1,19 +1,12 @@
 import type { NextConfig } from "next";
-import dotenv from "dotenv"
-dotenv.config();
+
 const nextConfig: NextConfig = {
-  basePath: process.env.BASE_PATH  ?? "/map-trips",
-  assetPrefix: process.env.ASSET_PREFIX ?? "/map-trips",
+  basePath: "/map-trips",
+  assetPrefix: "/map-trips",
   images: {
     remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "*.r2.dev",
-      },
-      {
-        protocol: "https",
-        hostname: "*.cloudflarestorage.com",
-      },
+      { protocol: "https", hostname: "*.r2.dev" },
+      { protocol: "https", hostname: "*.cloudflarestorage.com" },
     ],
   },
   experimental: {
