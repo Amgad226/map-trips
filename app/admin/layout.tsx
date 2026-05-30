@@ -25,6 +25,7 @@ export default async function AdminLayout({
                 >
                   Participants
                 </Link>
+
                 <Link
                   href="/"
                   className="text-sm text-muted-foreground hover:text-foreground font-medium transition-colors"
@@ -33,14 +34,11 @@ export default async function AdminLayout({
                 </Link>
               </div>
             </div>
-            <div className="flex items-center gap-4">
-              {user ? (
-                <>
-                  <span className="text-sm text-muted-foreground">{user.name}</span>
-                  <LogoutButton />
-                </>
-              ) : null}
-            </div>
+            {user ? (
+              <>
+                <LogoutButton />
+              </>
+            ) : null}
           </div>
         </div>
       </nav>
