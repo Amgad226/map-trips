@@ -1,12 +1,12 @@
 "use client";
 
-import { Trip } from "@prisma/client";
+import { Station, Trip } from "@prisma/client";
 import MapClient from "./MapClient";
 
 interface MapProps {
-  trips: Trip[];
+  stations: (Station & { trip: Trip; _count: { media: number } })[];
 }
 
-export default function Map({ trips }: MapProps) {
-  return <MapClient trips={trips} />;
+export default function Map({ stations }: MapProps) {
+  return <MapClient stations={stations} />;
 }

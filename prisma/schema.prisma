@@ -15,24 +15,65 @@ model User {
   updatedAt DateTime @updatedAt
 }
 
+model Participant {
+  id        Int               @id @default(autoincrement())
+  name      String
+  image     String?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  trips     TripParticipant[]
+}
+
 model Trip {
-  id          Int       @id @default(autoincrement())
-  title       String    @unique
-  description String?
-  latitude    Float
-  longitude   Float
-  tripDate    DateTime
-  coverImage  String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  media       Media[]
-  keywords    Keyword[]
+  id           Int               @id @default(autoincrement())
+  title        String            @unique
+  description  String?
+  color        String            @default("#3b82f6")
+  tripDate     DateTime
+  coverImage   String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  media        Media[]
+  stations     Station[]
+  keywords     Keyword[]
+  participants TripParticipant[]
+}
+
+model TripParticipant {
+  id            Int         @id @default(autoincrement())
+  tripId        Int
+  trip          Trip        @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  participantId Int
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  isBest        Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+
+  @@unique([tripId, participantId])
+  @@index([tripId])
+  @@index([participantId])
+}
+
+model Station {
+  id        Int      @id @default(autoincrement())
+  name      String
+  latitude  Float
+  longitude Float
+  order     Int      @default(0)
+  tripId    Int
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  media     Media[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId])
 }
 
 model Media {
   id           Int       @id @default(autoincrement())
   tripId       Int
   trip         Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  stationId    Int?
+  station      Station?  @relation(fields: [stationId], references: [id], onDelete: SetNull)
   type         MediaType
   url          String
   url360p      String?
@@ -43,10 +84,12 @@ model Media {
   fileSizeBeforeCompress Int?
   order        Int       @default(0)
   isFlagged    Boolean   @default(false)
+  isStationCover Boolean @default(false)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
   @@index([tripId])
+  @@index([stationId])
 }
 
 model Keyword {

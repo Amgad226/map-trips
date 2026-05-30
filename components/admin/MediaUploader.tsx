@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 interface MediaUploaderProps {
   tripId: number;
+  stations?: { id: number; name: string }[];
 }
 
 interface UploadEvent {
@@ -151,10 +152,11 @@ function MiniBar({ label, percent, colorClass }: { label: string; percent: numbe
   );
 }
 
-export default function MediaUploader({ tripId }: MediaUploaderProps) {
+export default function MediaUploader({ tripId, stations = [] }: MediaUploaderProps) {
   const { t } = useTranslation();
   const router = useRouter();
   const [files, setFiles] = useState<File[]>([]);
+  const [stationId, setStationId] = useState<string>("");
   const [previews, setPreviews] = useState<Map<string, string>>(new Map());
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState("");
@@ -299,6 +301,7 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
 
     const formData = new FormData();
     formData.append("tripId", tripId.toString());
+    if (stationId) formData.append("stationId", stationId);
     files.forEach((file) => formData.append("files", file));
     const optsArray = files.map((_, i) => fileOptions[i] ?? defaultOptions());
     formData.append("fileOptions", JSON.stringify(optsArray));
@@ -555,19 +558,31 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
 
             {opts.compress && (
               <div>
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center mb-1">
                   <label className="text-[10px] text-muted-foreground">Quality</label>
-                  <span className="text-[10px] font-medium">{opts.quality}%</span>
+                  <span className="text-[10px] font-semibold tabular-nums bg-primary/10 text-primary px-1.5 py-0.5 rounded-md">{opts.quality}%</span>
                 </div>
-                <input
-                  type="range"
-                  min={20}
-                  max={90}
-                  step={10}
-                  value={opts.quality}
-                  onChange={(e) => updateFileOption(index, { quality: parseInt(e.target.value, 10) })}
-                  className="w-full h-1 mt-1 accent-primary"
-                />
+                <div className="relative h-4 flex items-center">
+                  <div className="absolute inset-x-0 h-[3px] rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all"
+                      style={{ width: `${((opts.quality - 20) / 70) * 100}%` }}
+                    />
+                  </div>
+                  <input
+                    type="range"
+                    min={20}
+                    max={90}
+                    step={10}
+                    value={opts.quality}
+                    onChange={(e) => updateFileOption(index, { quality: parseInt(e.target.value, 10) })}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  <div
+                    className="absolute w-3 h-3 rounded-full bg-primary border-2 border-background shadow-sm pointer-events-none transition-all"
+                    style={{ left: `calc(${((opts.quality - 20) / 70) * 100}% - 6px)` }}
+                  />
+                </div>
                 <div className="flex justify-between text-[9px] text-muted-foreground mt-0.5">
                   <span>Smaller</span>
                   <span>Better</span>
@@ -627,6 +642,23 @@ export default function MediaUploader({ tripId }: MediaUploaderProps) {
           </div>
         </label>
       </div>
+
+      {/* Station select */}
+      {stations.length > 0 && (
+        <div className="flex items-center gap-3">
+          <label className="text-sm text-muted-foreground">{t("media.station")}</label>
+          <select
+            value={stationId}
+            onChange={(e) => setStationId(e.target.value)}
+            className="rounded-lg border border-border bg-background px-3 py-2 text-sm focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
+          >
+            <option value="">{t("media.noStation")}</option>
+            {stations.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {files.length > 0 && (
         <div className="space-y-4">

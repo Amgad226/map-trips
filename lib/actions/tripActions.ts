@@ -9,8 +9,7 @@ import { requireAuth } from "@/lib/auth/session";
 const tripSchema = z.object({
   title: z.string().min(1, "Title is required").max(200),
   description: z.string().optional(),
-  latitude: z.coerce.number().min(-90).max(90),
-  longitude: z.coerce.number().min(-180).max(180),
+  color: z.string().optional(),
   tripDate: z.coerce.date(),
   coverImage: z.string().optional(),
 });
@@ -26,9 +25,14 @@ export async function createTrip(formData: FormData) {
     throw new Error(Object.values(errors).flat().join(", "));
   }
 
+  const createData = {
+    ...parsed.data,
+    color: parsed.data.color || "#3b82f6",
+  };
+
   try {
     const trip = await prisma.trip.create({
-      data: parsed.data,
+      data: createData,
     });
 
     revalidatePath("/");
@@ -52,10 +56,15 @@ export async function updateTrip(id: number, formData: FormData) {
     throw new Error(Object.values(errors).flat().join(", "));
   }
 
+  const updateData = {
+    ...parsed.data,
+    color: parsed.data.color || "#3b82f6",
+  };
+
   try {
     await prisma.trip.update({
       where: { id },
-      data: parsed.data,
+      data: updateData,
     });
 
     revalidatePath("/");

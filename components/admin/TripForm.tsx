@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { Trip } from "@prisma/client";
-import LocationPicker from "./LocationPicker";
 
 interface TripFormProps {
   trip?: Trip | null;
@@ -16,13 +15,7 @@ export default function TripForm({ trip, action }: TripFormProps) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [showPicker, setShowPicker] = useState(false);
-  const [latitude, setLatitude] = useState<string>(
-    trip?.latitude?.toString() ?? ""
-  );
-  const [longitude, setLongitude] = useState<string>(
-    trip?.longitude?.toString() ?? ""
-  );
+  const [color, setColor] = useState(trip?.color ?? "#3b82f6");
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -47,12 +40,6 @@ export default function TripForm({ trip, action }: TripFormProps) {
   const formatDate = (date: Date) => {
     return date.toISOString().split("T")[0];
   };
-
-  function handleLocationSelect(lat: number, lng: number) {
-    setLatitude(lat.toString());
-    setLongitude(lng.toString());
-    setShowPicker(false);
-  }
 
   return (
     <>
@@ -90,60 +77,21 @@ export default function TripForm({ trip, action }: TripFormProps) {
           />
         </div>
 
-        {/* Location picker */}
+        {/* Color picker */}
         <div>
-          <label className="block text-sm font-medium text-foreground mb-2">
-            {t("tripForm.location")}
+          <label htmlFor="color" className="block text-sm font-medium text-foreground mb-1.5">
+            {t("tripForm.color")}
           </label>
-          <button
-            type="button"
-            onClick={() => setShowPicker(true)}
-            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted hover:border-border/80 transition-all"
-          >
-            <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            {latitude && longitude
-              ? `${parseFloat(latitude).toFixed(4)}, ${parseFloat(longitude).toFixed(4)}`
-              : t("tripForm.selectOnMap")}
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="latitude" className="block text-sm font-medium text-foreground mb-1.5">
-              {t("tripForm.latitude")}
-            </label>
+          <div className="flex items-center gap-3">
             <input
-              id="latitude"
-              name="latitude"
-              type="number"
-              step="any"
-              required
-              min={-90}
-              max={90}
-              value={latitude}
-              onChange={(e) => setLatitude(e.target.value)}
-              className="block w-full rounded-xl border border-border bg-card px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 transition-all"
+              id="color"
+              name="color"
+              type="color"
+              value={color}
+              onChange={(e) => setColor(e.target.value)}
+              className="w-12 h-10 rounded-xl border border-border bg-card cursor-pointer"
             />
-          </div>
-          <div>
-            <label htmlFor="longitude" className="block text-sm font-medium text-foreground mb-1.5">
-              {t("tripForm.longitude")}
-            </label>
-            <input
-              id="longitude"
-              name="longitude"
-              type="number"
-              step="any"
-              required
-              min={-180}
-              max={180}
-              value={longitude}
-              onChange={(e) => setLongitude(e.target.value)}
-              className="block w-full rounded-xl border border-border bg-card px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 transition-all"
-            />
+            <span className="text-sm text-muted-foreground font-mono">{color}</span>
           </div>
         </div>
 
@@ -180,15 +128,6 @@ export default function TripForm({ trip, action }: TripFormProps) {
           </button>
         </div>
       </form>
-
-      {showPicker && (
-        <LocationPicker
-          initialLat={latitude ? parseFloat(latitude) : undefined}
-          initialLng={longitude ? parseFloat(longitude) : undefined}
-          onSelect={handleLocationSelect}
-          onClose={() => setShowPicker(false)}
-        />
-      )}
     </>
   );
 }

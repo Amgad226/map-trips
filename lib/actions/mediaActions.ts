@@ -122,9 +122,13 @@ export async function uploadMedia(tripId: number, formData: FormData) {
     // Save to database
     const order = await prisma.media.count({ where: { tripId } });
 
+    const stationIdRaw = formData.get("stationId");
+    const stationId = stationIdRaw ? parseInt(stationIdRaw.toString(), 10) : undefined;
+
     const media = await prisma.media.create({
       data: {
         tripId,
+        stationId: stationId && !isNaN(stationId) ? stationId : undefined,
         type: isImage ? "IMAGE" : "VIDEO",
         url,
         thumbnailUrl,
@@ -221,4 +225,64 @@ export async function toggleMediaFlag(mediaId: number) {
 
   revalidatePath(`/admin/trips/${media.tripId}`);
   revalidatePath(`/trip/${media.tripId}`);
+}
+
+export async function moveMediaToStation(mediaId: number, stationId: number | null) {
+  await requireAuth();
+
+  const media = await prisma.media.findUnique({
+    where: { id: mediaId },
+  });
+
+  if (!media) {
+    throw new Error("Media not found");
+  }
+
+  // Verify station belongs to same trip if stationId is provided
+  if (stationId !== null) {
+    const station = await prisma.station.findUnique({
+      where: { id: stationId },
+    });
+    if (!station || station.tripId !== media.tripId) {
+      throw new Error("Station does not belong to this trip");
+    }
+  }
+
+  await prisma.media.update({
+    where: { id: mediaId },
+    data: { stationId: stationId },
+  });
+
+  revalidatePath(`/admin/trips/${media.tripId}`);
+  revalidatePath(`/trip/${media.tripId}`);
+}
+
+export async function setStationCover(mediaId: number, stationId: number | null) {
+  await requireAuth();
+
+  const media = await prisma.media.findUnique({
+    where: { id: mediaId },
+  });
+
+  if (!media) {
+    throw new Error("Media not found");
+  }
+
+  const tripId = media.tripId;
+
+  // If setting a new cover, first unset any existing cover for this station
+  if (stationId !== null) {
+    await prisma.media.updateMany({
+      where: { stationId, isStationCover: true },
+      data: { isStationCover: false },
+    });
+  }
+
+  await prisma.media.update({
+    where: { id: mediaId },
+    data: { isStationCover: stationId !== null },
+  });
+
+  revalidatePath(`/admin/trips/${tripId}`);
+  revalidatePath(`/trip/${tripId}`);
 }

@@ -72,8 +72,6 @@ export default function TripCard({ trip }: TripCardProps) {
             month: "short",
             day: "numeric",
           })}
-          <span className="mx-1">·</span>
-          {trip.latitude.toFixed(4)}, {trip.longitude.toFixed(4)}
         </p>
 
         <div className="flex items-center gap-2">

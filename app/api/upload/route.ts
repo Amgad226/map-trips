@@ -304,9 +304,13 @@ export async function POST(request: NextRequest) {
           // Save to database
           const order = await prisma.media.count({ where: { tripId } });
 
+          const stationIdRaw = formData.get("stationId");
+          const stationId = stationIdRaw ? parseInt(stationIdRaw.toString(), 10) : undefined;
+
           const mediaRecord = await prisma.media.create({
             data: {
               tripId,
+              stationId: stationId && !isNaN(stationId) ? stationId : undefined,
               type: isImage ? "IMAGE" : "VIDEO",
               url,
               thumbnailUrl,

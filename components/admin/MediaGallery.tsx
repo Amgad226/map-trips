@@ -1,17 +1,21 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Media } from "@prisma/client";
+import { useTranslation } from "react-i18next";
+import { Media, Station } from "@prisma/client";
 import { getProxyUrl } from "@/lib/utils";
 
 interface MediaGalleryProps {
   tripId: number;
   media: Media[];
+  stations?: Station[];
   coverImage: string | null;
   onDelete: (mediaId: number) => Promise<void>;
   onReorder: (mediaIds: number[]) => Promise<void>;
   onSetCover: (url: string | null) => Promise<void>;
   onToggleFlag: (mediaId: number) => Promise<void>;
+  onMoveMedia?: (mediaId: number, stationId: number | null) => Promise<void>;
+  onSetStationCover?: (mediaId: number, stationId: number | null) => Promise<void>;
 }
 
 function formatBytes(bytes: number | null | undefined): string {
@@ -25,13 +29,19 @@ function formatBytes(bytes: number | null | undefined): string {
 
 export default function MediaGallery({
   media,
+  stations = [],
   coverImage,
   onDelete,
   onReorder,
   onSetCover,
   onToggleFlag,
+  onMoveMedia,
+  onSetStationCover,
 }: Omit<MediaGalleryProps, "tripId">) {
+  const { t } = useTranslation();
+  const stationMap = new Map(stations.map((s) => [s.id, s]));
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [movingId, setMovingId] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function handleReorder(index: number, direction: "up" | "down") {
@@ -68,6 +78,21 @@ export default function MediaGallery({
   function handleToggleFlag(mediaId: number) {
     startTransition(async () => {
       await onToggleFlag(mediaId);
+    });
+  }
+
+  function handleMove(mediaId: number, stationId: number | null) {
+    if (!onMoveMedia) return;
+    startTransition(async () => {
+      await onMoveMedia(mediaId, stationId);
+      setMovingId(null);
+    });
+  }
+
+  function handleSetStationCover(mediaId: number, stationId: number | null) {
+    if (!onSetStationCover) return;
+    startTransition(async () => {
+      await onSetStationCover(mediaId, stationId);
     });
   }
 
@@ -120,6 +145,11 @@ export default function MediaGallery({
                 Cover
               </div>
             )}
+            {item.isStationCover && (
+              <div className="absolute top-2 left-2 bg-info text-info-foreground text-xs font-bold px-2.5 py-0.5 rounded-full backdrop-blur-sm">
+                Station Cover
+              </div>
+            )}
           </div>
 
           {/* Metadata */}
@@ -130,6 +160,17 @@ export default function MediaGallery({
                 <span>Before: {formatBytes(item.fileSizeBeforeCompress)}</span>
               )}
             </div>
+            {item.stationId && stationMap.has(item.stationId) && (
+              <div className="mt-1">
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  {stationMap.get(item.stationId)?.name}
+                </span>
+              </div>
+            )}
             {item.fileSizeBeforeCompress && item.fileSizeBeforeCompress > 0 && (
               <div className="mt-1 h-1 rounded-full bg-muted overflow-hidden">
                 <div
@@ -162,6 +203,57 @@ export default function MediaGallery({
               >
                 {coverImage === item.url ? "Remove Cover" : "Set as Cover"}
               </button>
+            )}
+
+            {/* Station cover button (images assigned to a station) */}
+            {item.type === "IMAGE" && item.stationId && onSetStationCover && (
+              <button
+                onClick={() =>
+                  handleSetStationCover(item.id, item.isStationCover ? null : item.stationId)
+                }
+                disabled={isPending}
+                className={`w-full rounded-xl px-2 py-1.5 text-xs font-medium transition-colors ${
+                  item.isStationCover
+                    ? "bg-info/15 text-info hover:bg-info/25"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                } disabled:opacity-50`}
+              >
+                {item.isStationCover ? "Remove Station Cover" : "Set as Station Cover"}
+              </button>
+            )}
+
+            {/* Move to station */}
+            {onMoveMedia && stations.length > 0 && (
+              <>
+                {movingId === item.id ? (
+                  <select
+                    value={item.stationId ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      handleMove(item.id, val ? parseInt(val, 10) : null);
+                    }}
+                    disabled={isPending}
+                    className="w-full rounded-xl border border-border bg-background px-2 py-1.5 text-xs focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
+                    autoFocus
+                    onBlur={() => setMovingId(null)}
+                  >
+                    <option value="">— None / General —</option>
+                    {stations.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <button
+                    onClick={() => setMovingId(item.id)}
+                    disabled={isPending}
+                    className="w-full rounded-xl px-2 py-1.5 text-xs font-medium transition-colors bg-muted text-muted-foreground hover:bg-muted/80 disabled:opacity-50"
+                  >
+                    {t("media.moveToStation")}
+                  </button>
+                )}
+              </>
             )}
 
             {/* Flag button */}

@@ -36,8 +36,7 @@ async function main() {
       data: {
         title: "Paris Adventure",
         description: "A wonderful week exploring the city of lights, visiting the Eiffel Tower, Louvre Museum, and charming Montmartre streets.",
-        latitude: 48.8566,
-        longitude: 2.3522,
+        color: "#3b82f6",
         tripDate: new Date("2024-06-15"),
         coverImage: null,
       },

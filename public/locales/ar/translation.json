@@ -38,7 +38,11 @@
     "createTrip": "إنشاء رحلة جديدة",
     "uploadMedia": "رفع الوسائط",
     "mediaGallery": "معرض الوسائط",
-    "adminDashboard": "لوحة تحكم الإدارة"
+    "adminDashboard": "لوحة تحكم الإدارة",
+    "stations": "المواقع",
+    "participants": "المشاركون",
+    "newParticipant": "+ مشارك جديد",
+    "noParticipants": "لا يوجد مشاركون بعد. أنشئ مشاركك الأول للبدء."
   },
   "tripForm": {
     "title": "العنوان",
@@ -48,6 +52,7 @@
     "latitude": "خط العرض",
     "longitude": "خط الطول",
     "tripDate": "تاريخ الرحلة",
+    "color": "اللون",
     "saving": "جاري الحفظ...",
     "updateTrip": "تحديث الرحلة",
     "createTrip": "إنشاء الرحلة",
@@ -58,7 +63,12 @@
     "backToMap": "العودة إلى الخريطة",
     "keywords": "الكلمات المفتاحية",
     "gallery": "المعرض",
-    "noMedia": "لا توجد صور أو فيديوهات بعد."
+    "stations": "المواقع",
+    "station": "موقع",
+    "participants": "المشاركون",
+    "noMedia": "لا توجد صور أو فيديوهات بعد.",
+    "noStationMedia": "لا توجد وسائط لهذا الموقع بعد.",
+    "moreItems": "عناصر إضافية"
   },
   "media": {
     "dropFiles": "أسحب الملفات هنا أو اضغط للرفع",
@@ -80,7 +90,12 @@
     "flag": "تحذير +18",
     "unflag": "إلغاء التحذير",
     "flagged": "محذر",
-    "flaggedBadge": "+18"
+    "flaggedBadge": "+18",
+    "station": "الموقع",
+    "noStation": "بدون موقع",
+    "moveToStation": "نقل إلى موقع",
+    "setStationCover": "تعيين كغلاف للموقع",
+    "removeStationCover": "إزالة غلاف الموقع"
   },
   "gallery": {
     "hideFlagged": "إخفاء المحذر",
@@ -112,19 +127,26 @@
     "r2Storage": "تخزين R2",
     "complete": "اكتمل الرفع!"
   },
-  "nav": {
-    "brand": "خريطة الرحلات",
-    "map": "الخريطة",
-    "admin": "الإدارة",
-    "toggleMenu": "تبديل القائمة",
-    "theme": "المظهر"
-  },
   "keywords": {
     "placeholder": "أضف كلمة مفتاحية...",
     "add": "إضافة",
     "adding": "...",
     "remove": "إزالة",
     "failed": "فشل إضافة الكلمة المفتاحية"
+  },
+  "station": {
+    "name": "الاسم",
+    "location": "الموقع",
+    "add": "إضافة موقع"
+  },
+  "participant": {
+    "name": "الاسم",
+    "image": "الصورة",
+    "imageUrl": "رابط الصورة",
+    "create": "إنشاء مشارك",
+    "select": "اختر مشاركاً...",
+    "add": "إضافة",
+    "noParticipants": "لا يوجد مشاركون في هذه الرحلة بعد."
   },
   "locationPicker": {
     "title": "اختيار الموقع",
@@ -134,7 +156,10 @@
   "map": {
     "normal": "خريطة",
     "satellite": "قمر صناعي",
-    "viewDetails": "عرض التفاصيل →"
+    "viewDetails": "عرض التفاصيل →",
+    "trips": "الرحلات",
+    "all": "الكل",
+    "none": "لا شيء"
   },
   "actions": {
     "edit": "تعديل",

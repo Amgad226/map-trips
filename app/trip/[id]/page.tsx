@@ -20,8 +20,16 @@ export default async function TripPage({ params }: Props) {
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
     include: {
+      stations: {
+        orderBy: { order: "asc" },
+        include: { media: { orderBy: { order: "asc" } } },
+      },
       media: { orderBy: { order: "asc" } },
       keywords: { orderBy: { createdAt: "asc" } },
+      participants: {
+        include: { participant: true },
+        orderBy: { createdAt: "asc" },
+      },
     },
   });
 

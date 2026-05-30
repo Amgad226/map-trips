@@ -38,7 +38,11 @@
     "createTrip": "Create New Trip",
     "uploadMedia": "Upload Media",
     "mediaGallery": "Media Gallery",
-    "adminDashboard": "Admin Dashboard"
+    "adminDashboard": "Admin Dashboard",
+    "stations": "Stations",
+    "participants": "Participants",
+    "newParticipant": "+ New Participant",
+    "noParticipants": "No participants yet. Create your first participant to get started."
   },
   "tripForm": {
     "title": "Title",
@@ -48,6 +52,7 @@
     "latitude": "Latitude",
     "longitude": "Longitude",
     "tripDate": "Trip Date",
+    "color": "Color",
     "saving": "Saving...",
     "updateTrip": "Update Trip",
     "createTrip": "Create Trip",
@@ -58,7 +63,12 @@
     "backToMap": "Back to map",
     "keywords": "Keywords",
     "gallery": "Gallery",
-    "noMedia": "No photos or videos yet."
+    "stations": "Stations",
+    "station": "Station",
+    "participants": "Participants",
+    "noMedia": "No photos or videos yet.",
+    "noStationMedia": "No media for this station yet.",
+    "moreItems": "more items"
   },
   "media": {
     "dropFiles": "Drop files here or click to upload",
@@ -78,7 +88,12 @@
     "flag": "Flag +18",
     "unflag": "Unflag",
     "flagged": "Flagged",
-    "flaggedBadge": "+18"
+    "flaggedBadge": "+18",
+    "station": "Station",
+    "noStation": "None / General",
+    "moveToStation": "Move to Station",
+    "setStationCover": "Set as Station Cover",
+    "removeStationCover": "Remove Station Cover"
   },
   "gallery": {
     "hideFlagged": "Hide flagged",
@@ -115,6 +130,20 @@
     "remove": "Remove",
     "failed": "Failed to add keyword"
   },
+  "station": {
+    "name": "Name",
+    "location": "Location",
+    "add": "Add Station"
+  },
+  "participant": {
+    "name": "Name",
+    "image": "Image",
+    "imageUrl": "Image URL",
+    "create": "Create Participant",
+    "select": "Select a participant...",
+    "add": "Add",
+    "noParticipants": "No participants on this trip yet."
+  },
   "locationPicker": {
     "title": "Select Location",
     "cancel": "Cancel",
@@ -123,7 +152,10 @@
   "map": {
     "normal": "Map",
     "satellite": "Satellite",
-    "viewDetails": "View details →"
+    "viewDetails": "View details →",
+    "trips": "Trips",
+    "all": "All",
+    "none": "None"
   },
   "actions": {
     "edit": "Edit",

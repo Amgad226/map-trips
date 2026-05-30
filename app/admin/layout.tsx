@@ -18,12 +18,20 @@ export default async function AdminLayout({
               <Link href="/admin" className="text-lg font-bold text-foreground">
                 Admin Dashboard
               </Link>
-              <Link
-                href="/"
-                className="text-sm text-muted-foreground hover:text-foreground font-medium transition-colors"
-              >
-                Map
-              </Link>
+              <div className="flex items-center gap-4">
+                <Link
+                  href="/admin/participants"
+                  className="text-sm text-muted-foreground hover:text-foreground font-medium transition-colors"
+                >
+                  Participants
+                </Link>
+                <Link
+                  href="/"
+                  className="text-sm text-muted-foreground hover:text-foreground font-medium transition-colors"
+                >
+                  Map
+                </Link>
+              </div>
             </div>
             <div className="flex items-center gap-4">
               {user ? (

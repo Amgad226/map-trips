@@ -5,15 +5,19 @@ import MapWrapper from "@/components/map/MapWrapper";
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const trips = await prisma.trip.findMany({
-    orderBy: { tripDate: "desc" },
+  const stations = await prisma.station.findMany({
+    orderBy: { order: "asc" },
+    include: {
+      trip: true,
+      _count: { select: { media: true } },
+    },
   });
 
   return (
     <div className="flex flex-col h-screen">
       <Navbar />
       <main className="flex-1 relative">
-        <MapWrapper trips={trips} />
+        <MapWrapper stations={stations} />
       </main>
     </div>
   );
